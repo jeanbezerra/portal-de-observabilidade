@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fluent UI React"
+  short_description: "Crie interfaces React fiéis ao Fluent 2"
+  default_prompt: "Use $fluent-ui-react para criar uma interface React fiel, acessível e orientada por tokens com Fluent UI v9."
