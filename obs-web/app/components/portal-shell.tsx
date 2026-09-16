@@ -10,16 +10,25 @@ import {
   BuildingPeopleRegular,
   CalculatorFilled,
   CalculatorRegular,
+  CalendarClockFilled,
+  CalendarClockRegular,
+  CalendarMonthFilled,
+  CalendarMonthRegular,
+  GlobeLocationFilled,
+  GlobeLocationRegular,
   GroupFilled,
   GroupRegular,
   HomeFilled,
   HomeRegular,
+  HistoryFilled,
+  HistoryRegular,
   KeyFilled,
   KeyRegular,
   PersonFilled,
   PersonKeyFilled,
   PersonKeyRegular,
   PersonRegular,
+  type FluentIcon,
 } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router";
@@ -114,6 +123,7 @@ const useStyles = makeStyles({
     flexDirection: "column",
     justifyContent: "space-between",
     padding: `${tokens.spacingVerticalXL} ${tokens.spacingHorizontalM}`,
+    overflowY: "auto",
     borderRight: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
     backgroundColor: tokens.colorNeutralBackground1,
     "@media (max-width: 760px)": {
@@ -123,6 +133,7 @@ const useStyles = makeStyles({
       display: "block",
       padding: tokens.spacingHorizontalS,
       overflowX: "auto",
+      overflowY: "hidden",
       borderRight: "none",
       borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
     },
@@ -143,6 +154,21 @@ const useStyles = makeStyles({
       display: "flex",
     },
   },
+  navSubgroups: {
+    display: "grid",
+    gap: tokens.spacingVerticalL,
+    "@media (max-width: 760px)": {
+      display: "flex",
+      gap: tokens.spacingHorizontalXS,
+    },
+  },
+  navSubgroup: {
+    display: "grid",
+    gap: tokens.spacingVerticalXS,
+    "@media (max-width: 760px)": {
+      display: "flex",
+    },
+  },
   navItems: {
     display: "grid",
     gap: tokens.spacingVerticalXS,
@@ -157,6 +183,15 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     letterSpacing: "0.04em",
     textTransform: "uppercase",
+    "@media (max-width: 760px)": {
+      display: "none",
+    },
+  },
+  navSubgroupLabel: {
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
     "@media (max-width: 760px)": {
       display: "none",
     },
@@ -208,68 +243,130 @@ const useStyles = makeStyles({
   },
 });
 
-const navigationGroups = [
+type NavigationItem = {
+  to: string;
+  label: string;
+  end: boolean;
+  regularIcon: FluentIcon;
+  filledIcon: FluentIcon;
+};
+
+type NavigationGroup = {
+  label: string;
+  sections: Array<{
+    label?: string;
+    items: NavigationItem[];
+  }>;
+};
+
+const navigationGroups: NavigationGroup[] = [
   {
     label: "Portal",
-    items: [
+    sections: [
       {
-        to: "/",
-        label: "Visão geral",
-        end: true,
-        regularIcon: HomeRegular,
-        filledIcon: HomeFilled,
+        items: [
+          {
+            to: "/",
+            label: "Visão geral",
+            end: true,
+            regularIcon: HomeRegular,
+            filledIcon: HomeFilled,
+          },
+        ],
       },
     ],
   },
   {
     label: "Serviços",
-    items: [
+    sections: [
       {
-        to: "/orcamentos",
-        label: "Orçamentos",
-        end: false,
-        regularIcon: CalculatorRegular,
-        filledIcon: CalculatorFilled,
+        items: [
+          {
+            to: "/orcamentos",
+            label: "Orçamentos",
+            end: false,
+            regularIcon: CalculatorRegular,
+            filledIcon: CalculatorFilled,
+          },
+        ],
       },
     ],
   },
   {
     label: "Administração",
-    items: [
+    sections: [
       {
-        to: "/administracao/usuarios",
-        label: "Usuários",
-        end: true,
-        regularIcon: PersonRegular,
-        filledIcon: PersonFilled,
+        label: "Identidade e acesso",
+        items: [
+          {
+            to: "/administracao/usuarios",
+            label: "Usuários",
+            end: true,
+            regularIcon: PersonRegular,
+            filledIcon: PersonFilled,
+          },
+          {
+            to: "/administracao/grupos",
+            label: "Grupos",
+            end: true,
+            regularIcon: GroupRegular,
+            filledIcon: GroupFilled,
+          },
+          {
+            to: "/administracao/roles",
+            label: "Roles",
+            end: true,
+            regularIcon: PersonKeyRegular,
+            filledIcon: PersonKeyFilled,
+          },
+          {
+            to: "/administracao/permissoes",
+            label: "Permissões",
+            end: true,
+            regularIcon: KeyRegular,
+            filledIcon: KeyFilled,
+          },
+          {
+            to: "/administracao/provedores-idp",
+            label: "Provedores IDP",
+            end: true,
+            regularIcon: BuildingPeopleRegular,
+            filledIcon: BuildingPeopleFilled,
+          },
+        ],
       },
       {
-        to: "/administracao/grupos",
-        label: "Grupos",
-        end: true,
-        regularIcon: GroupRegular,
-        filledIcon: GroupFilled,
-      },
-      {
-        to: "/administracao/roles",
-        label: "Roles",
-        end: true,
-        regularIcon: PersonKeyRegular,
-        filledIcon: PersonKeyFilled,
-      },
-      {
-        to: "/administracao/permissoes",
-        label: "Permissões",
-        end: true,
-        regularIcon: KeyRegular,
-        filledIcon: KeyFilled,
-      },
-      {
-        to: "/administracao/provedores-idp",
-        label: "Provedores IDP",
-        end: true,
-        regularIcon: BuildingPeopleRegular,
-        filledIcon: BuildingPeopleFilled,
+        label: "Agendamentos",
+        items: [
+          {
+            to: "/administracao/agendamentos/calendarios",
+            label: "Calendários",
+            end: true,
+            regularIcon: CalendarMonthRegular,
+            filledIcon: CalendarMonthFilled,
+          },
+          {
+            to: "/administracao/agendamentos/fusos-horarios",
+            label: "Fusos horários",
+            end: true,
+            regularIcon: GlobeLocationRegular,
+            filledIcon: GlobeLocationFilled,
+          },
+          {
+            to: "/administracao/agendamentos/rotinas-agendadas",
+            label: "Rotinas agendadas",
+            end: true,
+            regularIcon: CalendarClockRegular,
+            filledIcon: CalendarClockFilled,
+          },
+          {
+            to: "/administracao/agendamentos/historico-execucoes",
+            label: "Histórico de execuções",
+            end: true,
+            regularIcon: HistoryRegular,
+            filledIcon: HistoryFilled,
+          },
+        ],
       },
     ],
   },
@@ -313,41 +410,57 @@ export function PortalShell({ children }: { children: ReactNode }) {
                 aria-label={group.label}
               >
                 <span className={styles.navLabel}>{group.label}</span>
-                <div className={styles.navItems}>
-                  {group.items.map((item) => {
-                    const RegularIcon = item.regularIcon;
-                    const FilledIcon = item.filledIcon;
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        className={({ isActive }) =>
-                          mergeClasses(
-                            styles.navLink,
-                            isActive && styles.activeNavLink,
-                          )
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            {isActive ? (
-                              <FilledIcon
-                                className={styles.navIcon}
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <RegularIcon
-                                className={styles.navIcon}
-                                aria-hidden="true"
-                              />
-                            )}
-                            <span>{item.label}</span>
-                          </>
-                        )}
-                      </NavLink>
-                    );
-                  })}
+                <div className={styles.navSubgroups}>
+                  {group.sections.map((section, sectionIndex) => (
+                    <div
+                      className={styles.navSubgroup}
+                      key={section.label ?? `${group.label}-${sectionIndex}`}
+                      role={section.label ? "group" : undefined}
+                      aria-label={section.label}
+                    >
+                      {section.label ? (
+                        <span className={styles.navSubgroupLabel}>
+                          {section.label}
+                        </span>
+                      ) : null}
+                      <div className={styles.navItems}>
+                        {section.items.map((item) => {
+                          const RegularIcon = item.regularIcon;
+                          const FilledIcon = item.filledIcon;
+                          return (
+                            <NavLink
+                              key={item.to}
+                              to={item.to}
+                              end={item.end}
+                              className={({ isActive }) =>
+                                mergeClasses(
+                                  styles.navLink,
+                                  isActive && styles.activeNavLink,
+                                )
+                              }
+                            >
+                              {({ isActive }) => (
+                                <>
+                                  {isActive ? (
+                                    <FilledIcon
+                                      className={styles.navIcon}
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <RegularIcon
+                                      className={styles.navIcon}
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span>{item.label}</span>
+                                </>
+                              )}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

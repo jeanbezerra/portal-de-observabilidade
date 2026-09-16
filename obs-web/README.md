@@ -33,6 +33,14 @@ O servidor do build usa `http://localhost:3000` por padrão.
 - `/administracao/roles`: administração de roles.
 - `/administracao/permissoes`: administração de permissões.
 - `/administracao/provedores-idp`: administração de provedores de identidade.
+- `/administracao/agendamentos/calendarios`: cadastro e gestão do calendário corporativo.
+- `/administracao/agendamentos/fusos-horarios`: cadastro e gestão dos fusos horários usados pelos sistemas.
+- `/administracao/agendamentos/rotinas-agendadas`: gestão das rotinas agendadas.
+- `/administracao/agendamentos/historico-execucoes`: histórico das execuções do scheduler.
+
+Os endereços anteriores `/administracao/calendario` e
+`/administracao/fusos-horarios` redirecionam para o grupo Agendamentos da
+Administração.
 
 ## Escopo do protótipo
 
@@ -40,6 +48,8 @@ O servidor do build usa `http://localhost:3000` por padrão.
 - A identificação registra solicitante e gestor, vertical de negócio, produto, squad opcional, categoria Porto SDM, tipo de solicitação, nome e estágio do sistema e, em adições, o orçamento anterior aprovado.
 - Ao concluir os dados do solicitante, o portal prepara um identificador `ORC-...`, confirmado no envio, e gera a taxonomia de rastreabilidade para OneAgent, Kubernetes, serverless e OpenTelemetry.
 - O envio congela o manifesto de tags, baixa o comprovante em PDF e mantém o registro no `localStorage` do navegador.
+- O calendário corporativo permite cadastrar, editar, filtrar e excluir datas; no protótipo, os registros ficam no `localStorage` do navegador.
+- O cadastro de fusos horários mantém um identificador IANA ativo como padrão e também usa o `localStorage` nesta etapa.
 - Revisão técnica, aprovação, autenticação e armazenamento corporativo ainda dependem de integração com backend e BPMN.
 - Datadog e StackOpen aparecem no catálogo como soluções futuras, sem fluxo de solicitação ativo.
 

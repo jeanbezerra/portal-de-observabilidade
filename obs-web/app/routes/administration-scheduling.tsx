@@ -1,71 +1,35 @@
 import { makeStyles, Text, tokens } from "@fluentui/react-components";
 import {
-  BuildingPeopleRegular,
-  GroupRegular,
-  KeyRegular,
-  PersonKeyRegular,
-  PersonRegular,
+  CalendarClockRegular,
+  HistoryRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import { redirect } from "react-router";
 
-import type { Route } from "./+types/administration";
+import type { Route } from "./+types/administration-scheduling";
 
-type AdministrationSection = {
+type SchedulingSection = {
   title: string;
   description: string;
   emptyState: string;
   icon: FluentIcon;
 };
 
-const administrationSections: Record<string, AdministrationSection> = {
-  usuarios: {
-    title: "Usuários",
+const schedulingSections: Record<string, SchedulingSection> = {
+  "rotinas-agendadas": {
+    title: "Rotinas agendadas",
     description:
-      "Gerencie as pessoas que podem acessar o Portal de Observabilidade.",
-    emptyState: "O gerenciamento de usuários será disponibilizado aqui.",
-    icon: PersonRegular,
+      "Gerencie as rotinas, seus calendários, fusos horários e regras de execução.",
+    emptyState: "O gerenciamento de rotinas agendadas será disponibilizado aqui.",
+    icon: CalendarClockRegular,
   },
-  grupos: {
-    title: "Grupos",
+  "historico-execucoes": {
+    title: "Histórico de execuções",
     description:
-      "Organize usuários em grupos para simplificar a concessão de acessos.",
-    emptyState: "O gerenciamento de grupos será disponibilizado aqui.",
-    icon: GroupRegular,
-  },
-  roles: {
-    title: "Roles",
-    description:
-      "Defina os papéis usados para atribuir responsabilidades no portal.",
-    emptyState: "O gerenciamento de roles será disponibilizado aqui.",
-    icon: PersonKeyRegular,
-  },
-  permissoes: {
-    title: "Permissões",
-    description:
-      "Controle as ações e os recursos disponíveis para cada role.",
-    emptyState: "O gerenciamento de permissões será disponibilizado aqui.",
-    icon: KeyRegular,
-  },
-  "provedores-idp": {
-    title: "Provedores IDP",
-    description:
-      "Configure provedores de identidade como Microsoft Entra ID, LDAP e OAuth 2.0.",
-    emptyState:
-      "O gerenciamento de provedores de identidade será disponibilizado aqui.",
-    icon: BuildingPeopleRegular,
+      "Consulte o resultado, a duração e a instância responsável por cada execução.",
+    emptyState: "O histórico de execuções do scheduler será disponibilizado aqui.",
+    icon: HistoryRegular,
   },
 };
-
-const legacySchedulingRoutes: Record<string, string> = {
-  calendario: "/administracao/agendamentos/calendarios",
-  "fusos-horarios": "/administracao/agendamentos/fusos-horarios",
-};
-
-export function loader({ params }: Route.LoaderArgs) {
-  const destination = legacySchedulingRoutes[params.secao];
-  return destination ? redirect(destination) : null;
-}
 
 const useStyles = makeStyles({
   page: {
@@ -146,41 +110,44 @@ const useStyles = makeStyles({
 });
 
 export function meta({ params }: Route.MetaArgs) {
-  const section = administrationSections[params.secao];
+  const section = schedulingSections[params.secao];
 
   return [
     {
       title: section
-        ? `${section.title} | Administração | Portal de Observabilidade`
-        : "Administração | Portal de Observabilidade",
+        ? `${section.title} | Agendamentos | Portal de Observabilidade`
+        : "Agendamentos | Portal de Observabilidade",
     },
   ];
 }
 
-export default function Administration({ params }: Route.ComponentProps) {
+export default function AdministrationScheduling({
+  params,
+}: Route.ComponentProps) {
   const styles = useStyles();
-  const section = administrationSections[params.secao];
+  const section = schedulingSections[params.secao];
 
   if (!section) {
-    throw new Response("Seção administrativa não encontrada", { status: 404 });
+    throw new Response("Seção de agendamentos não encontrada", { status: 404 });
   }
 
   const SectionIcon = section.icon;
+  const titleId = `scheduling-${params.secao}-empty-title`;
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Text className={styles.eyebrow}>Administração</Text>
+        <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
         <h1 className={styles.title}>{section.title}</h1>
         <p className={styles.description}>{section.description}</p>
       </header>
 
-      <section className={styles.emptyState} aria-labelledby="admin-empty-title">
+      <section className={styles.emptyState} aria-labelledby={titleId}>
         <div className={styles.emptyStateContent}>
           <span className={styles.iconBox} aria-hidden="true">
             <SectionIcon className={styles.icon} />
           </span>
-          <h2 id="admin-empty-title" className={styles.emptyStateTitle}>
+          <h2 id={titleId} className={styles.emptyStateTitle}>
             Área em preparação
           </h2>
           <p className={styles.emptyStateDescription}>{section.emptyState}</p>
