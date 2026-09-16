@@ -28,6 +28,11 @@ O servidor do build usa `http://localhost:3000` por padrão.
 - `/`: visão geral das soluções de observabilidade.
 - `/orcamentos`: catálogo e orçamentos enviados.
 - `/orcamentos/novo/dynatrace`: fluxo completo da solicitação Dynatrace.
+- `/administracao/usuarios`: administração de usuários.
+- `/administracao/grupos`: administração de grupos.
+- `/administracao/roles`: administração de roles.
+- `/administracao/permissoes`: administração de permissões.
+- `/administracao/provedores-idp`: administração de provedores de identidade.
 
 ## Escopo do protótipo
 

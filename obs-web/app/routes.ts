@@ -4,4 +4,5 @@ export default [
   index("routes/home.tsx"),
   route("orcamentos", "routes/budgets.tsx"),
   route("orcamentos/novo/dynatrace", "routes/new-dynatrace-quote.tsx"),
+  route("administracao/:secao", "routes/administration.tsx"),
 ] satisfies RouteConfig;

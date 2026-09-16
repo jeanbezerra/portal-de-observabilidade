@@ -6,10 +6,20 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  BuildingPeopleFilled,
+  BuildingPeopleRegular,
   CalculatorFilled,
   CalculatorRegular,
+  GroupFilled,
+  GroupRegular,
   HomeFilled,
   HomeRegular,
+  KeyFilled,
+  KeyRegular,
+  PersonFilled,
+  PersonKeyFilled,
+  PersonKeyRegular,
+  PersonRegular,
 } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router";
@@ -220,6 +230,46 @@ const navigationGroups = [
         end: false,
         regularIcon: CalculatorRegular,
         filledIcon: CalculatorFilled,
+      },
+    ],
+  },
+  {
+    label: "Administração",
+    items: [
+      {
+        to: "/administracao/usuarios",
+        label: "Usuários",
+        end: true,
+        regularIcon: PersonRegular,
+        filledIcon: PersonFilled,
+      },
+      {
+        to: "/administracao/grupos",
+        label: "Grupos",
+        end: true,
+        regularIcon: GroupRegular,
+        filledIcon: GroupFilled,
+      },
+      {
+        to: "/administracao/roles",
+        label: "Roles",
+        end: true,
+        regularIcon: PersonKeyRegular,
+        filledIcon: PersonKeyFilled,
+      },
+      {
+        to: "/administracao/permissoes",
+        label: "Permissões",
+        end: true,
+        regularIcon: KeyRegular,
+        filledIcon: KeyFilled,
+      },
+      {
+        to: "/administracao/provedores-idp",
+        label: "Provedores IDP",
+        end: true,
+        regularIcon: BuildingPeopleRegular,
+        filledIcon: BuildingPeopleFilled,
       },
     ],
   },
