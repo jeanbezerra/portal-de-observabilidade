@@ -27,6 +27,8 @@ import {
 import {
   AddRegular,
   ArrowClockwiseRegular,
+  ChevronLeftRegular,
+  ChevronRightRegular,
   CopyRegular,
   DeleteRegular,
   DismissRegular,
@@ -66,9 +68,12 @@ import {
 const allGroups = "Todos os grupos" as const;
 const allStates = "Todos os estados" as const;
 const allTriggerTypes = "Todos os tipos" as const;
+const pageSizeOptions = [5, 10, 25] as const;
 
 type StateFilter = TriggerState | typeof allStates | "RUNNING";
 type TriggerTypeFilter = TriggerType | typeof allTriggerTypes;
+type PageSize = (typeof pageSizeOptions)[number];
+type PaginationItem = number | "start-ellipsis" | "end-ellipsis";
 type SortColumn =
   | "status"
   | "name"
@@ -80,6 +85,41 @@ type SortState = {
   column: SortColumn;
   direction: SortDirection;
 };
+
+function getPaginationItems(
+  currentPage: number,
+  totalPages: number,
+): PaginationItem[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, "end-ellipsis", totalPages];
+  }
+
+  if (currentPage >= totalPages - 3) {
+    return [
+      1,
+      "start-ellipsis",
+      totalPages - 4,
+      totalPages - 3,
+      totalPages - 2,
+      totalPages - 1,
+      totalPages,
+    ];
+  }
+
+  return [
+    1,
+    "start-ellipsis",
+    currentPage - 1,
+    currentPage,
+    currentPage + 1,
+    "end-ellipsis",
+    totalPages,
+  ];
+}
 
 const jobCollator = new Intl.Collator("pt-BR", {
   numeric: true,
@@ -389,13 +429,62 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: tokens.spacingHorizontalM,
+    gap: tokens.spacingHorizontalXL,
+    flexWrap: "wrap",
     padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalL}`,
     borderTop: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    "@media (max-width: 560px)": {
+    "@media (max-width: 900px)": {
       alignItems: "start",
       flexDirection: "column",
     },
+  },
+  paginationSummary: {
+    display: "grid",
+    gap: tokens.spacingVerticalXS,
+  },
+  paginationControls: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "end",
+    gap: tokens.spacingHorizontalL,
+    flexWrap: "wrap",
+    "@media (max-width: 900px)": {
+      justifyContent: "start",
+    },
+  },
+  pageSizeControl: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+    whiteSpace: "nowrap",
+  },
+  pageSizeLabel: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+  },
+  pageSizeSelect: {
+    width: "72px",
+    minWidth: "72px",
+  },
+  pagination: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+  },
+  pageNumbers: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXXS,
+  },
+  pageButton: {
+    minWidth: "32px",
+  },
+  paginationEllipsis: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "24px",
+    color: tokens.colorNeutralForeground2,
   },
   empty: {
     display: "grid",
@@ -455,6 +544,8 @@ export function ScheduledJobsPage() {
     () => new Set(),
   );
   const [sort, setSort] = useState<SortState>();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(5);
 
   useEffect(() => {
     const createdJob = (
@@ -518,6 +609,21 @@ export function ScheduledJobsPage() {
     );
   }, [groupFilter, jobs, search, sort, stateFilter, triggerTypeFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleJobs.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStartIndex = (currentPage - 1) * pageSize;
+  const pageJobs = visibleJobs.slice(
+    pageStartIndex,
+    pageStartIndex + pageSize,
+  );
+  const firstVisibleJob = pageJobs.length > 0 ? pageStartIndex + 1 : 0;
+  const lastVisibleJob = pageStartIndex + pageJobs.length;
+  const paginationItems = getPaginationItems(currentPage, totalPages);
+
+  useEffect(() => {
+    if (page !== currentPage) setPage(currentPage);
+  }, [currentPage, page]);
+
   const runningCount = jobs.filter((job) => job.activeExecution).length;
   const pausedCount = jobs.filter(
     (job) => getJobTriggerState(job) === "PAUSED",
@@ -536,10 +642,13 @@ export function ScheduledJobsPage() {
   const selectedVisibleJobs = visibleJobs.filter((job) =>
     selectedJobIds.has(job.id),
   );
-  const allVisibleJobsAreSelected =
-    visibleJobs.length > 0 && selectedVisibleJobs.length === visibleJobs.length;
-  const someVisibleJobsAreSelected =
-    selectedVisibleJobs.length > 0 && !allVisibleJobsAreSelected;
+  const selectedPageJobs = pageJobs.filter((job) =>
+    selectedJobIds.has(job.id),
+  );
+  const allPageJobsAreSelected =
+    pageJobs.length > 0 && selectedPageJobs.length === pageJobs.length;
+  const somePageJobsAreSelected =
+    selectedPageJobs.length > 0 && !allPageJobsAreSelected;
   const pausableSelectedCount = selectedVisibleJobs.filter(
     (job) =>
       job.triggers.length > 0 && getJobTriggerState(job) !== "PAUSED",
@@ -566,20 +675,21 @@ export function ScheduledJobsPage() {
     });
   }
 
-  function toggleAllVisibleJobs() {
-    const visibleIds = visibleJobs.map((job) => job.id);
+  function toggleAllPageJobs() {
+    const pageIds = pageJobs.map((job) => job.id);
     setSelectedJobIds((current) => {
       const next = new Set(current);
-      if (visibleIds.every((jobId) => current.has(jobId))) {
-        visibleIds.forEach((jobId) => next.delete(jobId));
+      if (pageIds.every((jobId) => current.has(jobId))) {
+        pageIds.forEach((jobId) => next.delete(jobId));
       } else {
-        visibleIds.forEach((jobId) => next.add(jobId));
+        pageIds.forEach((jobId) => next.add(jobId));
       }
       return next;
     });
   }
 
   function toggleSort(column: SortColumn) {
+    setPage(1);
     setSort((current) => ({
       column,
       direction:
@@ -829,6 +939,7 @@ export function ScheduledJobsPage() {
     setGroupFilter(allGroups);
     setStateFilter(allStates);
     setTriggerTypeFilter(allTriggerTypes);
+    setPage(1);
   }
 
   function handleRefresh() {
@@ -921,13 +1032,19 @@ export function ScheduledJobsPage() {
               value={search}
               contentBefore={<SearchRegular />}
               placeholder="Nome, grupo, descrição, handler ou trigger"
-              onChange={(_, data) => setSearch(data.value)}
+              onChange={(_, data) => {
+                setSearch(data.value);
+                setPage(1);
+              }}
             />
           </Field>
           <Field label="Grupo">
             <Select
               value={groupFilter}
-              onChange={(event) => setGroupFilter(event.target.value)}
+              onChange={(event) => {
+                setGroupFilter(event.target.value);
+                setPage(1);
+              }}
             >
               <option value={allGroups}>{allGroups}</option>
               {groups.map((group) => (
@@ -940,9 +1057,10 @@ export function ScheduledJobsPage() {
           <Field label="Estado">
             <Select
               value={stateFilter}
-              onChange={(event) =>
-                setStateFilter(event.target.value as StateFilter)
-              }
+              onChange={(event) => {
+                setStateFilter(event.target.value as StateFilter);
+                setPage(1);
+              }}
             >
               <option value={allStates}>{allStates}</option>
               <option value="NORMAL">Agendados</option>
@@ -957,9 +1075,10 @@ export function ScheduledJobsPage() {
           <Field label="Tipo de trigger">
             <Select
               value={triggerTypeFilter}
-              onChange={(event) =>
-                setTriggerTypeFilter(event.target.value as TriggerTypeFilter)
-              }
+              onChange={(event) => {
+                setTriggerTypeFilter(event.target.value as TriggerTypeFilter);
+                setPage(1);
+              }}
             >
               <option value={allTriggerTypes}>{allTriggerTypes}</option>
               {triggerTypes.map((type) => (
@@ -992,7 +1111,7 @@ export function ScheduledJobsPage() {
             </Text>
             <Text size={200} className={styles.secondary}>
               {selectedVisibleJobs.length > 0
-                ? "Os comandos serão aplicados somente às rotinas selecionadas e visíveis."
+                ? "Os comandos serão aplicados às rotinas selecionadas nos resultados atuais."
                 : "Use as caixas da primeira coluna para aplicar comandos em massa."}
             </Text>
           </div>
@@ -1034,6 +1153,7 @@ export function ScheduledJobsPage() {
         <div className={styles.tablePanel}>
           {visibleJobs.length > 0 ? (
             <Table
+              id="scheduled-jobs-table"
               className={styles.table}
               size="small"
               aria-label="Rotinas agendadas no Quartz"
@@ -1042,23 +1162,23 @@ export function ScheduledJobsPage() {
                 <TableRow>
                   <TableSelectionCell
                     checked={
-                      allVisibleJobsAreSelected
+                      allPageJobsAreSelected
                         ? true
-                        : someVisibleJobsAreSelected
+                        : somePageJobsAreSelected
                           ? "mixed"
                           : false
                     }
                     aria-checked={
-                      allVisibleJobsAreSelected
+                      allPageJobsAreSelected
                         ? true
-                        : someVisibleJobsAreSelected
+                        : somePageJobsAreSelected
                           ? "mixed"
                           : false
                     }
                     role="checkbox"
-                    onClick={toggleAllVisibleJobs}
+                    onClick={toggleAllPageJobs}
                     checkboxIndicator={{
-                      "aria-label": "Selecionar todas as rotinas exibidas",
+                      "aria-label": "Selecionar todas as rotinas desta página",
                     }}
                   />
                   <TableHeaderCell
@@ -1102,7 +1222,7 @@ export function ScheduledJobsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleJobs.map((job) => {
+                {pageJobs.map((job) => {
                   const trigger = getPrimaryTrigger(job);
                   const triggerState = getJobTriggerState(job);
                   const isPaused = triggerState === "PAUSED";
@@ -1236,12 +1356,113 @@ export function ScheduledJobsPage() {
             </div>
           )}
           <div className={styles.tableFooter}>
-            <Text size={200}>
-              Exibindo {visibleJobs.length} de {jobs.length} rotinas
-            </Text>
-            <Text size={200} className={styles.secondary}>
-              Horários apresentados no fuso configurado em cada trigger
-            </Text>
+            <div className={styles.paginationSummary}>
+              <Text
+                id="scheduled-jobs-pagination-summary"
+                size={200}
+                weight="semibold"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {visibleJobs.length === 0
+                  ? "Nenhuma rotina para exibir"
+                  : `Exibindo ${firstVisibleJob}–${lastVisibleJob} de ${visibleJobs.length} ${visibleJobs.length === 1 ? "rotina" : "rotinas"}`}
+              </Text>
+              <Text size={200} className={styles.secondary}>
+                Horários apresentados no fuso configurado em cada trigger
+              </Text>
+            </div>
+
+            {visibleJobs.length > 0 ? (
+              <div className={styles.paginationControls}>
+                <div className={styles.pageSizeControl}>
+                  <label
+                    className={styles.pageSizeLabel}
+                    htmlFor="scheduled-jobs-page-size"
+                  >
+                    Itens por página
+                  </label>
+                  <Select
+                    id="scheduled-jobs-page-size"
+                    className={styles.pageSizeSelect}
+                    size="small"
+                    value={String(pageSize)}
+                    aria-controls="scheduled-jobs-table"
+                    onChange={(event) => {
+                      setPageSize(Number(event.target.value) as PageSize);
+                      setPage(1);
+                    }}
+                  >
+                    {pageSizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <nav
+                  className={styles.pagination}
+                  aria-label="Paginação da tabela de rotinas"
+                  aria-describedby="scheduled-jobs-pagination-summary"
+                >
+                  <Button
+                    appearance="subtle"
+                    icon={<ChevronLeftRegular />}
+                    disabled={currentPage === 1}
+                    aria-controls="scheduled-jobs-table"
+                    onClick={() => setPage(currentPage - 1)}
+                  >
+                    Anterior
+                  </Button>
+
+                  <div className={styles.pageNumbers}>
+                    {paginationItems.map((item) =>
+                      typeof item === "number" ? (
+                        <Button
+                          key={item}
+                          className={styles.pageButton}
+                          appearance={
+                            item === currentPage ? "primary" : "subtle"
+                          }
+                          aria-current={
+                            item === currentPage ? "page" : undefined
+                          }
+                          aria-controls="scheduled-jobs-table"
+                          aria-label={
+                            item === currentPage
+                              ? `Página ${item}, atual`
+                              : `Ir para a página ${item}`
+                          }
+                          onClick={() => setPage(item)}
+                        >
+                          {item}
+                        </Button>
+                      ) : (
+                        <Text
+                          key={item}
+                          className={styles.paginationEllipsis}
+                          aria-hidden="true"
+                        >
+                          …
+                        </Text>
+                      ),
+                    )}
+                  </div>
+
+                  <Button
+                    appearance="subtle"
+                    icon={<ChevronRightRegular />}
+                    iconPosition="after"
+                    disabled={currentPage === totalPages}
+                    aria-controls="scheduled-jobs-table"
+                    onClick={() => setPage(currentPage + 1)}
+                  >
+                    Próxima
+                  </Button>
+                </nav>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
