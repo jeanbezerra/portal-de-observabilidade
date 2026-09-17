@@ -33,7 +33,6 @@ import {
   ArrowRightRegular,
   CheckmarkCircleFilled,
   CheckmarkRegular,
-  ChevronRightRegular,
   CloudRegular,
   CopyRegular,
   DocumentPdfRegular,
@@ -44,6 +43,7 @@ import {
 } from "@fluentui/react-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PageBreadcrumb } from "../../components/page-breadcrumb";
 import {
   createOrderId,
   saveOrder,
@@ -102,29 +102,6 @@ const useStyles = makeStyles({
     maxWidth: "1280px",
     minWidth: 0,
     margin: "0 auto",
-  },
-  breadcrumb: {
-    display: "flex",
-    alignItems: "center",
-    gap: tokens.spacingHorizontalXS,
-    color: tokens.colorNeutralForeground2,
-    fontSize: tokens.fontSizeBase200,
-  },
-  breadcrumbLink: {
-    minHeight: "32px",
-    display: "inline-flex",
-    alignItems: "center",
-    color: tokens.colorBrandForegroundLink,
-    textDecorationLine: "none",
-    "&:hover": {
-      textDecorationLine: "underline",
-    },
-    "&:focus-visible": {
-      outlineColor: tokens.colorStrokeFocus2,
-      outlineOffset: "2px",
-      outlineStyle: "solid",
-      outlineWidth: "2px",
-    },
   },
   pageHeader: {
     display: "flex",
@@ -929,13 +906,13 @@ export function QuoteWizard() {
 
   return (
     <div className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="Navegação estrutural">
-        <a className={styles.breadcrumbLink} href="/orcamentos">
-          Orçamentos
-        </a>
-        <ChevronRightRegular aria-hidden="true" />
-        <span>Novo orçamento Dynatrace</span>
-      </nav>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Orçamentos", href: "/orcamentos" },
+          { label: "Novo orçamento Dynatrace" },
+        ]}
+      />
 
       <header className={styles.pageHeader}>
         <div>

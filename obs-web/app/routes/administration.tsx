@@ -10,6 +10,7 @@ import {
 import { redirect } from "react-router";
 
 import type { Route } from "./+types/administration";
+import { PageBreadcrumb } from "../components/page-breadcrumb";
 
 type AdministrationSection = {
   title: string;
@@ -169,6 +170,15 @@ export default function Administration({ params }: Route.ComponentProps) {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Identidade e acesso" },
+          { label: section.title },
+        ]}
+      />
+
       <header className={styles.header}>
         <Text className={styles.eyebrow}>Administração</Text>
         <h1 className={styles.title}>{section.title}</h1>

@@ -26,6 +26,7 @@ import {
 import { useEffect, useState } from "react";
 
 import type { Route } from "./+types/budgets";
+import { PageBreadcrumb } from "../components/page-breadcrumb";
 import {
   loadOrders,
   type StoredOrder,
@@ -184,6 +185,13 @@ export default function Budgets() {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Orçamentos" },
+        ]}
+      />
+
       <header className={styles.pageHeader}>
         <div>
           <h1 className={styles.title}>Orçamentos</h1>

@@ -6,6 +6,7 @@ import {
 } from "@fluentui/react-icons";
 
 import type { Route } from "./+types/administration-scheduling";
+import { PageBreadcrumb } from "../components/page-breadcrumb";
 import { ScheduledJobsPage } from "../features/administration/scheduled-jobs-page";
 
 type SchedulingSection = {
@@ -141,6 +142,15 @@ export default function AdministrationScheduling({
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Agendamentos" },
+          { label: section.title },
+        ]}
+      />
+
       <header className={styles.header}>
         <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
         <h1 className={styles.title}>{section.title}</h1>

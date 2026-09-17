@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Route } from "./+types/administration-calendar";
+import { PageBreadcrumb } from "../components/page-breadcrumb";
 import {
   CalendarEntryDialog,
   DeleteCalendarEntryDialog,
@@ -354,6 +355,15 @@ export default function AdministrationCalendar() {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Agendamentos" },
+          { label: "Calendários" },
+        ]}
+      />
+
       <header className={styles.pageHeader}>
         <div>
           <Text className={styles.eyebrow}>Administração · Agendamentos</Text>

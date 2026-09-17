@@ -48,6 +48,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 
+import { PageBreadcrumb } from "../../components/page-breadcrumb";
 import {
   DeleteScheduledJobDialog,
   ScheduleEditorDialog,
@@ -1063,6 +1064,15 @@ export function ScheduledJobsPage() {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Agendamentos" },
+          { label: "Rotinas agendadas" },
+        ]}
+      />
+
       <header className={styles.header}>
         <div className={styles.headerCopy}>
           <Text className={styles.eyebrow}>Administração · Agendamentos</Text>

@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Route } from "./+types/administration-time-zones";
+import { PageBreadcrumb } from "../components/page-breadcrumb";
 import {
   DeleteTimeZoneEntryDialog,
   TimeZoneEntryDialog,
@@ -323,6 +324,15 @@ export default function AdministrationTimeZones() {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Agendamentos" },
+          { label: "Fusos horários" },
+        ]}
+      />
+
       <header className={styles.pageHeader}>
         <div>
           <Text className={styles.eyebrow}>Administração · Agendamentos</Text>

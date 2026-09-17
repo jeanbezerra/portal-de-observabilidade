@@ -13,12 +13,12 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
-  ArrowLeftRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 
+import { PageBreadcrumb } from "../../components/page-breadcrumb";
 import {
   scheduledJobs,
   triggerTypes,
@@ -169,9 +169,6 @@ const useStyles = makeStyles({
   header: {
     display: "grid",
     gap: tokens.spacingVerticalM,
-  },
-  backLink: {
-    justifySelf: "start",
   },
   eyebrow: {
     color: tokens.colorBrandForeground1,
@@ -582,16 +579,17 @@ export function ScheduledJobCreatePage() {
 
   return (
     <div className={styles.page}>
+      <PageBreadcrumb
+        items={[
+          { label: "Visão geral", href: "/" },
+          { label: "Administração" },
+          { label: "Agendamentos" },
+          { label: "Rotinas agendadas", href: jobsRoute },
+          { label: "Criar rotina" },
+        ]}
+      />
+
       <header className={styles.header}>
-        <Button
-          className={styles.backLink}
-          as="a"
-          href={jobsRoute}
-          appearance="subtle"
-          icon={<ArrowLeftRegular />}
-        >
-          Voltar para rotinas
-        </Button>
         <div>
           <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
           <h1 className={styles.title}>Criar rotina</h1>
