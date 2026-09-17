@@ -7,9 +7,17 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ArrowSync20Regular,
+  CheckmarkCircle20Regular,
   CheckmarkCircleRegular,
+  Clock20Regular,
   ErrorCircleRegular,
+  ErrorCircle20Regular,
   HistoryRegular,
+  LockClosed20Regular,
+  PauseCircle20Regular,
+  PlayCircle20Regular,
+  Stop20Regular,
 } from "@fluentui/react-icons";
 
 import type {
@@ -18,6 +26,86 @@ import type {
   TriggerState,
 } from "./scheduled-jobs-model";
 
+type JobOperationalStatus =
+  | "WAITING"
+  | "RUNNING"
+  | "INTERRUPTION_REQUESTED"
+  | "ERROR"
+  | "PAUSED"
+  | "BLOCKED"
+  | "COMPLETE"
+  | "ON_DEMAND";
+
+const jobOperationalStatusPresentation = {
+  WAITING: {
+    label: "Aguardando",
+    icon: Clock20Regular,
+    tone: "neutral",
+    motion: "pulse",
+  },
+  RUNNING: {
+    label: "Executando",
+    icon: ArrowSync20Regular,
+    tone: "brand",
+    motion: "spin",
+  },
+  INTERRUPTION_REQUESTED: {
+    label: "Interrupção solicitada",
+    icon: Stop20Regular,
+    tone: "warning",
+    motion: "pulse",
+  },
+  ERROR: {
+    label: "Com erro",
+    icon: ErrorCircle20Regular,
+    tone: "danger",
+    motion: "none",
+  },
+  PAUSED: {
+    label: "Pausado",
+    icon: PauseCircle20Regular,
+    tone: "warning",
+    motion: "none",
+  },
+  BLOCKED: {
+    label: "Bloqueado",
+    icon: LockClosed20Regular,
+    tone: "warning",
+    motion: "none",
+  },
+  COMPLETE: {
+    label: "Concluído",
+    icon: CheckmarkCircle20Regular,
+    tone: "success",
+    motion: "none",
+  },
+  ON_DEMAND: {
+    label: "Sob demanda",
+    icon: PlayCircle20Regular,
+    tone: "neutral",
+    motion: "none",
+  },
+} as const;
+
+function getJobOperationalStatus({
+  execution,
+  triggerState,
+}: {
+  execution?: ActiveExecution;
+  triggerState: TriggerState;
+}): JobOperationalStatus {
+  if (execution?.state === "RUNNING") return "RUNNING";
+  if (execution?.state === "INTERRUPTION_REQUESTED") {
+    return "INTERRUPTION_REQUESTED";
+  }
+  if (triggerState === "ERROR") return "ERROR";
+  if (triggerState === "PAUSED") return "PAUSED";
+  if (triggerState === "BLOCKED") return "BLOCKED";
+  if (triggerState === "COMPLETE") return "COMPLETE";
+  if (triggerState === "NONE") return "ON_DEMAND";
+  return "WAITING";
+}
+
 export function getJobOperationalStatusLabel({
   execution,
   triggerState,
@@ -25,16 +113,8 @@ export function getJobOperationalStatusLabel({
   execution?: ActiveExecution;
   triggerState: TriggerState;
 }) {
-  if (execution?.state === "RUNNING") return "Executando";
-  if (execution?.state === "INTERRUPTION_REQUESTED") {
-    return "Interrupção solicitada";
-  }
-  if (triggerState === "ERROR") return "Com erro";
-  if (triggerState === "PAUSED") return "Pausado";
-  if (triggerState === "BLOCKED") return "Bloqueado";
-  if (triggerState === "COMPLETE") return "Concluído";
-  if (triggerState === "NONE") return "Sob demanda";
-  return "Aguardando";
+  const status = getJobOperationalStatus({ execution, triggerState });
+  return jobOperationalStatusPresentation[status].label;
 }
 
 export function getExecutionResultLabel(result: ExecutionResult) {
@@ -51,26 +131,23 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
     minWidth: "148px",
   },
-  operationalDot: {
-    width: "10px",
-    height: "10px",
+  operationalIcon: {
     flexShrink: 0,
-    borderRadius: tokens.borderRadiusCircular,
   },
-  brandDot: {
-    backgroundColor: tokens.colorBrandForeground1,
+  brandStatus: {
+    color: tokens.colorBrandForeground1,
   },
-  dangerDot: {
-    backgroundColor: tokens.colorStatusDangerForeground1,
+  dangerStatus: {
+    color: tokens.colorStatusDangerForeground1,
   },
-  warningDot: {
-    backgroundColor: tokens.colorStatusWarningForeground3,
+  warningStatus: {
+    color: tokens.colorStatusWarningForeground3,
   },
-  successDot: {
-    backgroundColor: tokens.colorStatusSuccessForeground1,
+  successStatus: {
+    color: tokens.colorStatusSuccessForeground1,
   },
-  neutralDot: {
-    backgroundColor: tokens.colorNeutralForeground3,
+  neutralStatus: {
+    color: tokens.colorNeutralForeground2,
   },
   pulse: {
     animationDuration: `calc(${tokens.durationUltraSlow} + ${tokens.durationUltraSlow} + ${tokens.durationUltraSlow})`,
@@ -80,6 +157,18 @@ const useStyles = makeStyles({
       "0%": { opacity: 0.45, transform: "scale(0.82)" },
       "50%": { opacity: 1, transform: "scale(1.18)" },
       "100%": { opacity: 0.45, transform: "scale(0.82)" },
+    },
+    "@media (prefers-reduced-motion: reduce)": {
+      animationName: "none",
+    },
+  },
+  spin: {
+    animationDuration: `calc(${tokens.durationUltraSlow} + ${tokens.durationUltraSlow} + ${tokens.durationUltraSlow})`,
+    animationIterationCount: "infinite",
+    animationTimingFunction: tokens.curveLinear,
+    animationName: {
+      from: { transform: "rotate(0deg)" },
+      to: { transform: "rotate(360deg)" },
     },
     "@media (prefers-reduced-motion: reduce)": {
       animationName: "none",
@@ -107,38 +196,32 @@ export function JobOperationalStatus({
 }) {
   const styles = useStyles();
 
-  const label = getJobOperationalStatusLabel({ execution, triggerState });
-  let dotClass = styles.brandDot;
-  let animated = true;
-
-  if (execution?.state === "INTERRUPTION_REQUESTED") {
-    dotClass = styles.warningDot;
-  } else if (triggerState === "ERROR") {
-    dotClass = styles.dangerDot;
-  } else if (triggerState === "PAUSED") {
-    dotClass = styles.warningDot;
-    animated = false;
-  } else if (triggerState === "BLOCKED") {
-    dotClass = styles.warningDot;
-  } else if (triggerState === "COMPLETE") {
-    dotClass = styles.successDot;
-    animated = false;
-  } else if (triggerState === "NONE") {
-    dotClass = styles.neutralDot;
-    animated = false;
-  }
+  const status = getJobOperationalStatus({ execution, triggerState });
+  const presentation = jobOperationalStatusPresentation[status];
+  const StatusIcon = presentation.icon;
+  const toneClass = {
+    brand: styles.brandStatus,
+    danger: styles.dangerStatus,
+    warning: styles.warningStatus,
+    success: styles.successStatus,
+    neutral: styles.neutralStatus,
+  }[presentation.tone];
+  const motionClass = {
+    pulse: styles.pulse,
+    spin: styles.spin,
+    none: undefined,
+  }[presentation.motion];
 
   return (
-    <div className={styles.operationalStatus}>
-      <span
+    <div className={mergeClasses(styles.operationalStatus, toneClass)}>
+      <StatusIcon
         aria-hidden="true"
         className={mergeClasses(
-          styles.operationalDot,
-          dotClass,
-          animated && styles.pulse,
+          styles.operationalIcon,
+          motionClass,
         )}
       />
-      <Text weight="semibold">{label}</Text>
+      <Text weight="semibold">{presentation.label}</Text>
     </div>
   );
 }
