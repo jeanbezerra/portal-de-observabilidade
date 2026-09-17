@@ -68,7 +68,7 @@ import {
 const allGroups = "Todos os grupos" as const;
 const allStates = "Todos os estados" as const;
 const allTriggerTypes = "Todos os tipos" as const;
-const pageSizeOptions = [5, 10, 25] as const;
+const pageSizeOptions = [15, 45, 100] as const;
 
 type StateFilter = TriggerState | typeof allStates | "RUNNING";
 type TriggerTypeFilter = TriggerType | typeof allTriggerTypes;
@@ -545,7 +545,7 @@ export function ScheduledJobsPage() {
   );
   const [sort, setSort] = useState<SortState>();
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSize>(5);
+  const [pageSize, setPageSize] = useState<PageSize>(15);
 
   useEffect(() => {
     const createdJob = (
