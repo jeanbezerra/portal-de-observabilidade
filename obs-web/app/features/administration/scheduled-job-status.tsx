@@ -1,6 +1,7 @@
 import {
   Badge,
   makeStyles,
+  mergeClasses,
   Spinner,
   Text,
   tokens,
@@ -18,6 +19,50 @@ import type {
 } from "./scheduled-jobs-model";
 
 const useStyles = makeStyles({
+  operationalStatus: {
+    display: "grid",
+    gap: "2px",
+    minWidth: "180px",
+  },
+  operationalLine: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+  },
+  operationalDot: {
+    width: "10px",
+    height: "10px",
+    flexShrink: 0,
+    borderRadius: tokens.borderRadiusCircular,
+  },
+  brandDot: {
+    backgroundColor: tokens.colorBrandForeground1,
+  },
+  dangerDot: {
+    backgroundColor: tokens.colorStatusDangerForeground1,
+  },
+  warningDot: {
+    backgroundColor: tokens.colorStatusWarningForeground3,
+  },
+  successDot: {
+    backgroundColor: tokens.colorStatusSuccessForeground1,
+  },
+  neutralDot: {
+    backgroundColor: tokens.colorNeutralForeground3,
+  },
+  pulse: {
+    animationDuration: `calc(${tokens.durationUltraSlow} + ${tokens.durationUltraSlow} + ${tokens.durationUltraSlow})`,
+    animationIterationCount: "infinite",
+    animationTimingFunction: tokens.curveEasyEase,
+    animationName: {
+      "0%": { opacity: 0.45, transform: "scale(0.82)" },
+      "50%": { opacity: 1, transform: "scale(1.18)" },
+      "100%": { opacity: 0.45, transform: "scale(0.82)" },
+    },
+    "@media (prefers-reduced-motion: reduce)": {
+      animationName: "none",
+    },
+  },
   execution: {
     display: "grid",
     gap: tokens.spacingVerticalXS,
@@ -30,6 +75,71 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
   },
 });
+
+export function JobOperationalStatus({
+  execution,
+  triggerState,
+}: {
+  execution?: ActiveExecution;
+  triggerState: TriggerState;
+}) {
+  const styles = useStyles();
+
+  let label = "Aguardando";
+  let detail = "Próximo disparo programado";
+  let dotClass = styles.brandDot;
+  let animated = true;
+
+  if (execution?.state === "RUNNING") {
+    label = "Executando";
+    detail = `${execution.elapsed} · ${execution.schedulerInstance}`;
+  } else if (execution?.state === "INTERRUPTION_REQUESTED") {
+    label = "Interrupção solicitada";
+    detail = "Aguardando confirmação do handler";
+    dotClass = styles.warningDot;
+  } else if (triggerState === "ERROR") {
+    label = "Com erro";
+    detail = "Trigger requer correção";
+    dotClass = styles.dangerDot;
+  } else if (triggerState === "PAUSED") {
+    label = "Pausado";
+    detail = "Novos disparos suspensos";
+    dotClass = styles.warningDot;
+    animated = false;
+  } else if (triggerState === "BLOCKED") {
+    label = "Bloqueado";
+    detail = "Aguardando liberação do JobKey";
+    dotClass = styles.warningDot;
+  } else if (triggerState === "COMPLETE") {
+    label = "Concluído";
+    detail = "Trigger sem novas execuções";
+    dotClass = styles.successDot;
+    animated = false;
+  } else if (triggerState === "NONE") {
+    label = "Aguardando";
+    detail = "Disponível para disparo manual";
+    dotClass = styles.neutralDot;
+  }
+
+  return (
+    <div className={styles.operationalStatus}>
+      <div className={styles.operationalLine}>
+        <span
+          aria-hidden="true"
+          className={mergeClasses(
+            styles.operationalDot,
+            dotClass,
+            animated && styles.pulse,
+          )}
+        />
+        <Text weight="semibold">{label}</Text>
+      </div>
+      <Text size={200} className={styles.secondary}>
+        {detail}
+      </Text>
+    </div>
+  );
+}
 
 export function TriggerStateBadge({ state }: { state: TriggerState }) {
   const presentation: Record<

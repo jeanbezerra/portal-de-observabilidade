@@ -3,6 +3,7 @@ import {
   Field,
   Input,
   makeStyles,
+  mergeClasses,
   Menu,
   MenuDivider,
   MenuItem,
@@ -18,13 +19,13 @@ import {
   TableHeader,
   TableHeaderCell,
   TableRow,
+  TableSelectionCell,
   Text,
   Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import {
   ArrowClockwiseRegular,
-  ArrowResetRegular,
   CopyRegular,
   DeleteRegular,
   DismissRegular,
@@ -56,8 +57,7 @@ import {
 } from "./scheduled-jobs-model";
 import {
   ExecutionResultBadge,
-  ExecutionStatus,
-  TriggerStateBadge,
+  JobOperationalStatus,
 } from "./scheduled-job-status";
 
 const allGroups = "Todos os grupos" as const;
@@ -199,6 +199,27 @@ const useStyles = makeStyles({
       gridTemplateColumns: "minmax(0, 1fr)",
     },
   },
+  bulkActions: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: tokens.spacingHorizontalL,
+    flexWrap: "wrap",
+    padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalL}`,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
+  bulkSummary: {
+    display: "grid",
+    gap: "2px",
+  },
+  bulkButtons: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+    flexWrap: "wrap",
+  },
   tablePanel: {
     minWidth: 0,
     overflowX: "auto",
@@ -217,6 +238,15 @@ const useStyles = makeStyles({
     },
     "&:focus-within": {
       backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
+  tableRowSelected: {
+    backgroundColor: tokens.colorBrandBackground2,
+    "&:hover": {
+      backgroundColor: tokens.colorBrandBackground2Hover,
+    },
+    "&:focus-within": {
+      backgroundColor: tokens.colorBrandBackground2Hover,
     },
   },
   jobCell: {
@@ -246,15 +276,15 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "end",
     gap: tokens.spacingHorizontalXS,
-    minWidth: "228px",
+    minWidth: "136px",
     whiteSpace: "nowrap",
   },
   actionsHeader: {
     position: "sticky",
     zIndex: 2,
     right: 0,
-    width: "248px",
-    minWidth: "248px",
+    width: "156px",
+    minWidth: "156px",
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: `-${tokens.strokeWidthThin} 0 0 ${tokens.colorNeutralStroke2}`,
   },
@@ -262,8 +292,8 @@ const useStyles = makeStyles({
     position: "sticky",
     zIndex: 1,
     right: 0,
-    width: "248px",
-    minWidth: "248px",
+    width: "156px",
+    minWidth: "156px",
     backgroundColor: "inherit",
     boxShadow: `-${tokens.strokeWidthThin} 0 0 ${tokens.colorNeutralStroke2}`,
   },
@@ -338,6 +368,9 @@ export function ScheduledJobsPage() {
   const [jobToEdit, setJobToEdit] = useState<ScheduledJob>();
   const [jobToDelete, setJobToDelete] = useState<ScheduledJob>();
   const [lastUpdated, setLastUpdated] = useState("agora");
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const groups = useMemo(
     () => [...new Set(jobs.map((job) => job.group))].sort(),
@@ -391,11 +424,158 @@ export function ScheduledJobsPage() {
     groupFilter !== allGroups ||
     stateFilter !== allStates ||
     triggerTypeFilter !== allTriggerTypes;
+  const selectedVisibleJobs = visibleJobs.filter((job) =>
+    selectedJobIds.has(job.id),
+  );
+  const allVisibleJobsAreSelected =
+    visibleJobs.length > 0 && selectedVisibleJobs.length === visibleJobs.length;
+  const someVisibleJobsAreSelected =
+    selectedVisibleJobs.length > 0 && !allVisibleJobsAreSelected;
+  const pausableSelectedCount = selectedVisibleJobs.filter(
+    (job) =>
+      job.triggers.length > 0 && getJobTriggerState(job) !== "PAUSED",
+  ).length;
+  const executableSelectedCount = selectedVisibleJobs.filter(
+    (job) => !(job.disallowConcurrent && job.activeExecution),
+  ).length;
+  const interruptibleSelectedCount = selectedVisibleJobs.filter(
+    (job) => job.activeExecution && job.interruptable,
+  ).length;
 
   function updateJob(jobId: string, updater: (job: ScheduledJob) => ScheduledJob) {
     setJobs((current) =>
       current.map((job) => (job.id === jobId ? updater(job) : job)),
     );
+  }
+
+  function toggleJobSelection(jobId: string) {
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }
+
+  function toggleAllVisibleJobs() {
+    const visibleIds = visibleJobs.map((job) => job.id);
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+      if (visibleIds.every((jobId) => current.has(jobId))) {
+        visibleIds.forEach((jobId) => next.delete(jobId));
+      } else {
+        visibleIds.forEach((jobId) => next.add(jobId));
+      }
+      return next;
+    });
+  }
+
+  function handlePauseSelected() {
+    const pausableIds = new Set(
+      selectedVisibleJobs
+        .filter(
+          (job) =>
+            job.triggers.length > 0 && getJobTriggerState(job) !== "PAUSED",
+        )
+        .map((job) => job.id),
+    );
+
+    setJobs((current) =>
+      current.map((job) =>
+        pausableIds.has(job.id)
+          ? {
+              ...job,
+              triggers: job.triggers.map((trigger) => ({
+                ...trigger,
+                state: "PAUSED",
+                nextFireTime: "Pausado",
+              })),
+            }
+          : job,
+      ),
+    );
+    const pausedMessage =
+      pausableIds.size === 1
+        ? "1 rotina teve os novos disparos pausados."
+        : `${pausableIds.size} rotinas tiveram os novos disparos pausados.`;
+    setNotice({
+      intent: "warning",
+      message: `${pausedMessage} A API chamará pauseJob para cada JobKey; execuções já iniciadas continuarão normalmente.`,
+    });
+  }
+
+  function handleTriggerSelected() {
+    const executableIds = new Set(
+      selectedVisibleJobs
+        .filter((job) => !(job.disallowConcurrent && job.activeExecution))
+        .map((job) => job.id),
+    );
+    const requestedAt = Date.now();
+
+    setJobs((current) =>
+      current.map((job, index) =>
+        executableIds.has(job.id)
+          ? {
+              ...job,
+              activeExecution: {
+                state: "RUNNING",
+                fireInstanceId: `manual-lote-${requestedAt}-${index}`,
+                schedulerInstance: "Aguardando aquisição",
+                podName: "Aguardando aquisição por uma instância",
+                scheduledFireTime: "Disparo manual em lote",
+                actualFireTime: "agora",
+                elapsed: "menos de 1 s",
+                refireCount: 0,
+                recovering: false,
+              },
+            }
+          : job,
+      ),
+    );
+
+    const skippedCount = selectedVisibleJobs.length - executableIds.size;
+    const requestedMessage =
+      executableIds.size === 1
+        ? "Disparo imediato solicitado para 1 rotina com triggerJob."
+        : `Disparo imediato solicitado para ${executableIds.size} rotinas com triggerJob.`;
+    const skippedMessage =
+      skippedCount === 1
+        ? "1 rotina em execução e sem concorrência foi ignorada."
+        : `${skippedCount} rotinas em execução e sem concorrência foram ignoradas.`;
+    setNotice({
+      intent: skippedCount > 0 ? "warning" : "success",
+      message: `${requestedMessage} ${skippedCount > 0 ? skippedMessage : "A API acompanhará cada fireInstanceId criado."}`,
+    });
+  }
+
+  function handleInterruptSelected() {
+    const interruptibleIds = new Set(
+      selectedVisibleJobs
+        .filter((job) => job.activeExecution && job.interruptable)
+        .map((job) => job.id),
+    );
+
+    setJobs((current) =>
+      current.map((job) =>
+        interruptibleIds.has(job.id) && job.activeExecution
+          ? {
+              ...job,
+              activeExecution: {
+                ...job.activeExecution,
+                state: "INTERRUPTION_REQUESTED",
+              },
+            }
+          : job,
+      ),
+    );
+    const interruptionMessage =
+      interruptibleIds.size === 1
+        ? "Interrupção solicitada para 1 execução."
+        : `Interrupção solicitada para ${interruptibleIds.size} execuções.`;
+    setNotice({
+      intent: "warning",
+      message: `${interruptionMessage} A API deverá encaminhar interrupt(fireInstanceId) à instância proprietária; a conclusão depende da cooperação de cada handler.`,
+    });
   }
 
   function handleTriggerNow(job: ScheduledJob) {
@@ -472,24 +652,6 @@ export function ScheduledJobsPage() {
     });
   }
 
-  function handleResetError(job: ScheduledJob) {
-    updateJob(job.id, (current) => ({
-      ...current,
-      triggers: current.triggers.map((trigger) => ({
-        ...trigger,
-        state: trigger.state === "ERROR" ? "NORMAL" : trigger.state,
-        nextFireTime:
-          trigger.state === "ERROR"
-            ? "Recalculado pela API"
-            : trigger.nextFireTime,
-      })),
-    }));
-    setNotice({
-      intent: "success",
-      message: `O trigger de “${job.name}” saiu do estado de erro. A API deverá confirmar o novo estado retornado pelo Quartz.`,
-    });
-  }
-
   function handleDuplicate(job: ScheduledJob) {
     const duplicatedJob = cloneScheduledJob(job);
     setJobs((current) => [...current, duplicatedJob]);
@@ -535,6 +697,11 @@ export function ScheduledJobsPage() {
 
   function handleDelete(job: ScheduledJob) {
     setJobs((current) => current.filter((item) => item.id !== job.id));
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+      next.delete(job.id);
+      return next;
+    });
     setJobToDelete(undefined);
     setNotice({
       intent: "success",
@@ -617,9 +784,9 @@ export function ScheduledJobsPage() {
               Jobs e triggers
             </h2>
             <p className={styles.sectionDescription}>
-              O estado do agendamento pertence ao trigger. A execução ativa é
-              exibida separadamente para evitar confundir “pausado” com
-              “interrompido”.
+              O estado operacional combina o trigger com a execução ativa.
+              Pausar suspende novos disparos; interromper atua somente sobre
+              uma execução em andamento.
             </p>
           </div>
           <Text size={200}>Última atualização: {lastUpdated}</Text>
@@ -689,6 +856,58 @@ export function ScheduledJobsPage() {
           </Button>
         </div>
 
+        <div
+          className={styles.bulkActions}
+          role="group"
+          aria-label="Ações para as rotinas selecionadas"
+        >
+          <div className={styles.bulkSummary} aria-live="polite">
+            <Text weight="semibold">
+              {selectedVisibleJobs.length === 1
+                ? "1 rotina selecionada"
+                : `${selectedVisibleJobs.length} rotinas selecionadas`}
+            </Text>
+            <Text size={200} className={styles.secondary}>
+              {selectedVisibleJobs.length > 0
+                ? "Os comandos serão aplicados somente às rotinas selecionadas e visíveis."
+                : "Use as caixas da primeira coluna para aplicar comandos em massa."}
+            </Text>
+          </div>
+          <div className={styles.bulkButtons}>
+            <Button
+              appearance="secondary"
+              icon={<PauseRegular />}
+              disabled={pausableSelectedCount === 0}
+              onClick={handlePauseSelected}
+            >
+              Pausar disparos
+            </Button>
+            <Button
+              appearance="secondary"
+              icon={<PlayRegular />}
+              disabled={executableSelectedCount === 0}
+              onClick={handleTriggerSelected}
+            >
+              Disparar agora
+            </Button>
+            <Button
+              appearance="secondary"
+              icon={<StopRegular />}
+              disabled={interruptibleSelectedCount === 0}
+              onClick={handleInterruptSelected}
+            >
+              Interromper execuções
+            </Button>
+            <Button
+              appearance="subtle"
+              disabled={selectedVisibleJobs.length === 0}
+              onClick={() => setSelectedJobIds(new Set())}
+            >
+              Limpar seleção
+            </Button>
+          </div>
+        </div>
+
         <div className={styles.tablePanel}>
           {visibleJobs.length > 0 ? (
             <Table
@@ -698,10 +917,31 @@ export function ScheduledJobsPage() {
             >
               <TableHeader>
                 <TableRow>
+                  <TableSelectionCell
+                    checked={
+                      allVisibleJobsAreSelected
+                        ? true
+                        : someVisibleJobsAreSelected
+                          ? "mixed"
+                          : false
+                    }
+                    aria-checked={
+                      allVisibleJobsAreSelected
+                        ? true
+                        : someVisibleJobsAreSelected
+                          ? "mixed"
+                          : false
+                    }
+                    role="checkbox"
+                    onClick={toggleAllVisibleJobs}
+                    checkboxIndicator={{
+                      "aria-label": "Selecionar todas as rotinas exibidas",
+                    }}
+                  />
+                  <TableHeaderCell>Estado</TableHeaderCell>
                   <TableHeaderCell>Rotina</TableHeaderCell>
                   <TableHeaderCell>Agendamento</TableHeaderCell>
                   <TableHeaderCell>Próxima execução</TableHeaderCell>
-                  <TableHeaderCell>Execução atual</TableHeaderCell>
                   <TableHeaderCell>Último resultado</TableHeaderCell>
                   <TableHeaderCell className={styles.actionsHeader}>
                     Ações
@@ -713,10 +953,29 @@ export function ScheduledJobsPage() {
                   const trigger = getPrimaryTrigger(job);
                   const triggerState = getJobTriggerState(job);
                   const isPaused = triggerState === "PAUSED";
-                  const hasError = triggerState === "ERROR";
+                  const isSelected = selectedJobIds.has(job.id);
 
                   return (
-                    <TableRow className={styles.tableRow} key={job.id}>
+                    <TableRow
+                      className={mergeClasses(
+                        styles.tableRow,
+                        isSelected && styles.tableRowSelected,
+                      )}
+                      key={job.id}
+                    >
+                      <TableSelectionCell
+                        checked={isSelected}
+                        onClick={() => toggleJobSelection(job.id)}
+                        checkboxIndicator={{
+                          "aria-label": `Selecionar ${job.name}`,
+                        }}
+                      />
+                      <TableCell>
+                        <JobOperationalStatus
+                          execution={job.activeExecution}
+                          triggerState={triggerState}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className={styles.jobCell}>
                           <Text weight="semibold">{job.name}</Text>
@@ -725,7 +984,6 @@ export function ScheduledJobsPage() {
                       </TableCell>
                       <TableCell>
                         <div className={styles.scheduleCell}>
-                          <TriggerStateBadge state={triggerState} />
                           {trigger ? (
                             <>
                               <Text weight="semibold">{trigger.schedule}</Text>
@@ -751,9 +1009,6 @@ export function ScheduledJobsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <ExecutionStatus execution={job.activeExecution} />
-                      </TableCell>
-                      <TableCell>
                         <div className={styles.resultCell}>
                           <ExecutionResultBadge
                             result={job.lastExecution.result}
@@ -770,13 +1025,6 @@ export function ScheduledJobsPage() {
                             job={job}
                             onTriggerNow={handleTriggerNow}
                           />
-                          <Button
-                            appearance="primary"
-                            icon={<PlayRegular />}
-                            onClick={() => handleTriggerNow(job)}
-                          >
-                            Disparar
-                          </Button>
                           <Menu>
                             <Tooltip content="Mais ações" relationship="label">
                               <MenuTrigger disableButtonEnhancement>
@@ -789,6 +1037,14 @@ export function ScheduledJobsPage() {
                             </Tooltip>
                             <MenuPopover>
                               <MenuList>
+                                {trigger ? (
+                                  <MenuItem
+                                    icon={<EditRegular />}
+                                    onClick={() => setJobToEdit(job)}
+                                  >
+                                    Editar agendamento
+                                  </MenuItem>
+                                ) : null}
                                 {trigger ? (
                                   isPaused ? (
                                     <MenuItem
@@ -806,22 +1062,6 @@ export function ScheduledJobsPage() {
                                     </MenuItem>
                                   )
                                 ) : null}
-                                {trigger ? (
-                                  <MenuItem
-                                    icon={<EditRegular />}
-                                    onClick={() => setJobToEdit(job)}
-                                  >
-                                    Editar agendamento
-                                  </MenuItem>
-                                ) : null}
-                                {hasError ? (
-                                  <MenuItem
-                                    icon={<ArrowResetRegular />}
-                                    onClick={() => handleResetError(job)}
-                                  >
-                                    Retirar trigger do erro
-                                  </MenuItem>
-                                ) : null}
                                 <MenuItem
                                   icon={<StopRegular />}
                                   disabled={
@@ -830,6 +1070,12 @@ export function ScheduledJobsPage() {
                                   onClick={() => handleInterrupt(job)}
                                 >
                                   Solicitar interrupção
+                                </MenuItem>
+                                <MenuItem
+                                  icon={<PlayRegular />}
+                                  onClick={() => handleTriggerNow(job)}
+                                >
+                                  Disparar
                                 </MenuItem>
                                 <MenuDivider />
                                 <MenuItem
