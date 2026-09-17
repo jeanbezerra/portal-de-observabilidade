@@ -1,5 +1,6 @@
 import {
   Button,
+  Card,
   Field,
   Input,
   makeStyles,
@@ -27,19 +28,24 @@ import {
 import {
   AddRegular,
   ArrowClockwiseRegular,
+  ArrowSync24Regular,
+  CalendarClock24Regular,
   ChevronLeftRegular,
   ChevronRightRegular,
   CopyRegular,
   DeleteRegular,
   DismissRegular,
   EditRegular,
+  ErrorCircle24Regular,
   MoreHorizontalRegular,
+  PauseCircle24Regular,
   PauseRegular,
+  PlayCircle24Regular,
   PlayRegular,
   SearchRegular,
   StopRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import {
@@ -74,6 +80,7 @@ type StateFilter = TriggerState | typeof allStates | "RUNNING";
 type TriggerTypeFilter = TriggerType | typeof allTriggerTypes;
 type PageSize = (typeof pageSizeOptions)[number];
 type PaginationItem = number | "start-ellipsis" | "end-ellipsis";
+type SummaryTone = "neutral" | "brand" | "warning" | "danger";
 type SortColumn =
   | "status"
   | "name"
@@ -84,6 +91,13 @@ type SortDirection = "ascending" | "descending";
 type SortState = {
   column: SortColumn;
   direction: SortDirection;
+};
+
+const triggerTypeLabels: Record<TriggerType, string> = {
+  CronTrigger: "Expressão cron",
+  SimpleTrigger: "Intervalo simples",
+  CalendarIntervalTrigger: "Intervalo de calendário",
+  DailyTimeIntervalTrigger: "Intervalo diário",
 };
 
 function getPaginationItems(
@@ -288,19 +302,68 @@ const useStyles = makeStyles({
   },
   summaryCard: {
     display: "grid",
-    gap: tokens.spacingVerticalXS,
+    gap: tokens.spacingVerticalM,
     minWidth: 0,
     padding: tokens.spacingHorizontalL,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusLarge,
-    backgroundColor: tokens.colorNeutralBackground1,
+    borderTopWidth: tokens.strokeWidthThickest,
+  },
+  summaryCardNeutral: {
+    borderTopColor: tokens.colorNeutralStrokeAccessible,
+  },
+  summaryCardBrand: {
+    borderTopColor: tokens.colorBrandStroke1,
+  },
+  summaryCardWarning: {
+    borderTopColor: tokens.colorStatusWarningBorderActive,
+  },
+  summaryCardDanger: {
+    borderTopColor: tokens.colorStatusDangerBorderActive,
+  },
+  summaryCardHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: tokens.spacingHorizontalM,
+  },
+  summaryIcon: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "40px",
+    height: "40px",
+    flexShrink: 0,
+    borderRadius: tokens.borderRadiusCircular,
+  },
+  summaryIconNeutral: {
+    color: tokens.colorNeutralForeground2,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
+  summaryIconBrand: {
+    color: tokens.colorBrandForeground1,
+    backgroundColor: tokens.colorBrandBackground2,
+  },
+  summaryIconWarning: {
+    color: tokens.colorStatusWarningForeground3,
+    backgroundColor: tokens.colorStatusWarningBackground1,
+  },
+  summaryIconDanger: {
+    color: tokens.colorStatusDangerForeground1,
+    backgroundColor: tokens.colorStatusDangerBackground1,
   },
   summaryValue: {
     fontSize: tokens.fontSizeHero700,
     fontWeight: tokens.fontWeightSemibold,
     lineHeight: tokens.lineHeightHero700,
   },
+  summaryCopy: {
+    display: "grid",
+    gap: tokens.spacingVerticalXS,
+  },
   summaryLabel: {
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  summaryDescription: {
     color: tokens.colorNeutralForeground2,
   },
   section: {
@@ -504,13 +567,54 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
-function SummaryCard({ value, label }: { value: number; label: string }) {
+function SummaryCard({
+  value,
+  label,
+  description,
+  icon,
+  tone,
+}: {
+  value: number;
+  label: string;
+  description: string;
+  icon: ReactNode;
+  tone: SummaryTone;
+}) {
   const styles = useStyles();
+  const cardToneClass = {
+    neutral: styles.summaryCardNeutral,
+    brand: styles.summaryCardBrand,
+    warning: styles.summaryCardWarning,
+    danger: styles.summaryCardDanger,
+  }[tone];
+  const iconToneClass = {
+    neutral: styles.summaryIconNeutral,
+    brand: styles.summaryIconBrand,
+    warning: styles.summaryIconWarning,
+    danger: styles.summaryIconDanger,
+  }[tone];
+
   return (
-    <div className={styles.summaryCard}>
-      <Text className={styles.summaryValue}>{value}</Text>
-      <Text className={styles.summaryLabel}>{label}</Text>
-    </div>
+    <Card
+      appearance="outline"
+      className={mergeClasses(styles.summaryCard, cardToneClass)}
+    >
+      <div className={styles.summaryCardHeader}>
+        <span
+          aria-hidden="true"
+          className={mergeClasses(styles.summaryIcon, iconToneClass)}
+        >
+          {icon}
+        </span>
+        <Text className={styles.summaryValue}>{value}</Text>
+      </div>
+      <div className={styles.summaryCopy}>
+        <Text className={styles.summaryLabel}>{label}</Text>
+        <Text size={200} className={styles.summaryDescription}>
+          {description}
+        </Text>
+      </div>
+    </Card>
   );
 }
 
@@ -560,7 +664,7 @@ export function ScheduledJobsPage() {
     );
     setNotice({
       intent: "success",
-      message: `Rotina “${createdJob.name}” criada no mockup. Na integração, a API persistirá o JobDetail${createdJob.triggers.length > 0 ? " e o Trigger na mesma transação" : " durável sem um Trigger inicial"}.`,
+      message: `Rotina “${createdJob.name}” criada no mockup. Na integração, a API ${createdJob.triggers.length > 0 ? "salvará a rotina e seu agendamento em uma única operação" : "salvará a rotina como sob demanda"}.`,
     });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate]);
@@ -631,7 +735,7 @@ export function ScheduledJobsPage() {
   const errorCount = jobs.filter(
     (job) => getJobTriggerState(job) === "ERROR",
   ).length;
-  const withoutTriggerCount = jobs.filter(
+  const onDemandCount = jobs.filter(
     (job) => getJobTriggerState(job) === "NONE",
   ).length;
   const filtersAreActive =
@@ -733,7 +837,7 @@ export function ScheduledJobsPage() {
         : `${pausableIds.size} rotinas tiveram os novos disparos pausados.`;
     setNotice({
       intent: "warning",
-      message: `${pausedMessage} A API chamará pauseJob para cada JobKey; execuções já iniciadas continuarão normalmente.`,
+      message: `${pausedMessage} A API pausará os próximos disparos de cada rotina; execuções já iniciadas continuarão normalmente.`,
     });
   }
 
@@ -769,15 +873,15 @@ export function ScheduledJobsPage() {
     const skippedCount = selectedVisibleJobs.length - executableIds.size;
     const requestedMessage =
       executableIds.size === 1
-        ? "Disparo imediato solicitado para 1 rotina com triggerJob."
-        : `Disparo imediato solicitado para ${executableIds.size} rotinas com triggerJob.`;
+        ? "Disparo imediato solicitado para 1 rotina."
+        : `Disparo imediato solicitado para ${executableIds.size} rotinas.`;
     const skippedMessage =
       skippedCount === 1
         ? "1 rotina em execução e sem concorrência foi ignorada."
         : `${skippedCount} rotinas em execução e sem concorrência foram ignoradas.`;
     setNotice({
       intent: skippedCount > 0 ? "warning" : "success",
-      message: `${requestedMessage} ${skippedCount > 0 ? skippedMessage : "A API acompanhará cada fireInstanceId criado."}`,
+      message: `${requestedMessage} ${skippedCount > 0 ? skippedMessage : "A API acompanhará cada nova execução."}`,
     });
   }
 
@@ -807,7 +911,7 @@ export function ScheduledJobsPage() {
         : `Interrupção solicitada para ${interruptibleIds.size} execuções.`;
     setNotice({
       intent: "warning",
-      message: `${interruptionMessage} A API deverá encaminhar interrupt(fireInstanceId) à instância proprietária; a conclusão depende da cooperação de cada handler.`,
+      message: `${interruptionMessage} A API encaminhará o comando ao nó responsável; a conclusão depende de cada rotina aceitar a interrupção.`,
     });
   }
 
@@ -836,7 +940,7 @@ export function ScheduledJobsPage() {
     }));
     setNotice({
       intent: "success",
-      message: `Disparo imediato solicitado para “${job.name}”. A API chamará triggerJob e acompanhará o fireInstanceId criado.`,
+      message: `Disparo imediato solicitado para “${job.name}”. A API enviará o comando e acompanhará a nova execução.`,
     });
   }
 
@@ -866,7 +970,7 @@ export function ScheduledJobsPage() {
     }));
     setNotice({
       intent: "success",
-      message: `Os triggers de “${job.name}” foram retomados. A próxima execução será recalculada pelo Quartz.`,
+      message: `Os disparos de “${job.name}” foram retomados. A próxima execução será recalculada automaticamente.`,
     });
   }
 
@@ -881,7 +985,7 @@ export function ScheduledJobsPage() {
     }));
     setNotice({
       intent: "warning",
-      message: `Interrupção solicitada para “${job.name}”. A API deverá encaminhar o comando à instância ${job.activeExecution.schedulerInstance}; o término depende da cooperação do handler.`,
+      message: `Interrupção solicitada para “${job.name}”. A API encaminhará o comando ao nó responsável; o término depende de a rotina aceitar a interrupção.`,
     });
   }
 
@@ -916,7 +1020,7 @@ export function ScheduledJobsPage() {
     setJobToEdit(undefined);
     setNotice({
       intent: "success",
-      message: `Agendamento de “${job.name}” atualizado. Na API, rescheduleJob substituirá somente o trigger selecionado.`,
+      message: `Agendamento de “${job.name}” atualizado. A API substituirá somente a configuração deste agendamento.`,
     });
   }
 
@@ -930,7 +1034,7 @@ export function ScheduledJobsPage() {
     setJobToDelete(undefined);
     setNotice({
       intent: "success",
-      message: `Rotina “${job.name}” removida do mockup com seus triggers associados.`,
+      message: `Rotina “${job.name}” removida do mockup com seus agendamentos associados.`,
     });
   }
 
@@ -953,7 +1057,7 @@ export function ScheduledJobsPage() {
     setNotice({
       intent: "info",
       message:
-        "Dados atualizados. Na integração, a API recomporá jobs, triggers e execuções ativas de todas as instâncias do cluster.",
+        "Dados atualizados. Na integração, a API consultará rotinas, agendamentos e execuções ativas em todos os nós do serviço.",
     });
   }
 
@@ -964,8 +1068,8 @@ export function ScheduledJobsPage() {
           <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
           <h1 className={styles.title}>Rotinas agendadas</h1>
           <p className={styles.lead}>
-            Administre JobDetails e seus triggers, acompanhe execuções ativas e
-            envie comandos operacionais ao cluster Quartz.
+            Gerencie rotinas, acompanhe execuções em andamento e controle os
+            agendamentos em um só lugar.
           </p>
         </div>
         <div className={styles.headerActions} aria-label="Ações da página">
@@ -1004,34 +1108,67 @@ export function ScheduledJobsPage() {
       ) : null}
 
       <section className={styles.summaryGrid} aria-label="Resumo das rotinas">
-        <SummaryCard value={jobs.length} label="JobDetails cadastrados" />
-        <SummaryCard value={runningCount} label="Execuções ativas" />
-        <SummaryCard value={pausedCount} label="Triggers pausados" />
-        <SummaryCard value={errorCount} label="Triggers com erro" />
-        <SummaryCard value={withoutTriggerCount} label="Jobs sem trigger" />
+        <SummaryCard
+          value={jobs.length}
+          label="Rotinas"
+          description="Cadastradas no sistema"
+          icon={<CalendarClock24Regular />}
+          tone="neutral"
+        />
+        <SummaryCard
+          value={runningCount}
+          label="Em execução"
+          description="Processando agora"
+          icon={<ArrowSync24Regular />}
+          tone="brand"
+        />
+        <SummaryCard
+          value={pausedCount}
+          label="Pausadas"
+          description="Aguardam retomada"
+          icon={<PauseCircle24Regular />}
+          tone="warning"
+        />
+        <SummaryCard
+          value={errorCount}
+          label="Com erro"
+          description="Precisam de atenção"
+          icon={<ErrorCircle24Regular />}
+          tone="danger"
+        />
+        <SummaryCard
+          value={onDemandCount}
+          label="Sob demanda"
+          description="Iniciadas manualmente"
+          icon={<PlayCircle24Regular />}
+          tone="neutral"
+        />
       </section>
 
       <section className={styles.section} aria-labelledby="jobs-table-title">
         <div className={styles.sectionHeading}>
           <div>
             <h2 id="jobs-table-title" className={styles.sectionTitle}>
-              Jobs e triggers
+              Rotinas
             </h2>
             <p className={styles.sectionDescription}>
-              O estado operacional combina o trigger com a execução ativa.
-              Pausar suspende novos disparos; interromper atua somente sobre
-              uma execução em andamento.
+              Acompanhe o estado de cada rotina e use as ações disponíveis para
+              editar, pausar, executar ou interromper processamentos.
             </p>
           </div>
           <Text size={200}>Última atualização: {lastUpdated}</Text>
         </div>
 
-        <div className={styles.filters} role="group" aria-label="Filtros de jobs">
+        <div
+          className={styles.filters}
+          role="group"
+          aria-label="Filtros de rotinas"
+        >
           <Field label="Buscar">
             <Input
               value={search}
               contentBefore={<SearchRegular />}
-              placeholder="Nome, grupo, descrição, handler ou trigger"
+              placeholder="Nome, grupo ou descrição"
               onChange={(_, data) => {
                 setSearch(data.value);
                 setPage(1);
@@ -1068,11 +1205,11 @@ export function ScheduledJobsPage() {
               <option value="BLOCKED">Bloqueados</option>
               <option value="ERROR">Com erro</option>
               <option value="COMPLETE">Concluídos</option>
-              <option value="NONE">Sem trigger</option>
+              <option value="NONE">Sob demanda</option>
               <option value="RUNNING">Em execução</option>
             </Select>
           </Field>
-          <Field label="Tipo de trigger">
+          <Field label="Tipo de agendamento">
             <Select
               value={triggerTypeFilter}
               onChange={(event) => {
@@ -1083,7 +1220,7 @@ export function ScheduledJobsPage() {
               <option value={allTriggerTypes}>{allTriggerTypes}</option>
               {triggerTypes.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {triggerTypeLabels[type]}
                 </option>
               ))}
             </Select>
@@ -1156,7 +1293,7 @@ export function ScheduledJobsPage() {
               id="scheduled-jobs-table"
               className={styles.table}
               size="small"
-              aria-label="Rotinas agendadas no Quartz"
+              aria-label="Rotinas agendadas"
             >
               <TableHeader>
                 <TableRow>
@@ -1348,7 +1485,7 @@ export function ScheduledJobsPage() {
             <div className={styles.empty}>
               <Text weight="semibold">Nenhuma rotina encontrada</Text>
               <Text className={styles.secondary}>
-                Altere ou limpe os filtros para consultar outros JobDetails.
+                Altere ou limpe os filtros para consultar outras rotinas.
               </Text>
               <Button appearance="secondary" onClick={clearFilters}>
                 Limpar filtros
@@ -1369,7 +1506,7 @@ export function ScheduledJobsPage() {
                   : `Exibindo ${firstVisibleJob}–${lastVisibleJob} de ${visibleJobs.length} ${visibleJobs.length === 1 ? "rotina" : "rotinas"}`}
               </Text>
               <Text size={200} className={styles.secondary}>
-                Horários apresentados no fuso configurado em cada trigger
+                Horários apresentados no fuso configurado em cada agendamento
               </Text>
             </div>
 
