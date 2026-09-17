@@ -6,6 +6,7 @@ import {
 } from "@fluentui/react-icons";
 
 import type { Route } from "./+types/administration-scheduling";
+import { ScheduledJobsPage } from "../features/administration/scheduled-jobs-page";
 
 type SchedulingSection = {
   title: string;
@@ -129,6 +130,10 @@ export default function AdministrationScheduling({
 
   if (!section) {
     throw new Response("Seção de agendamentos não encontrada", { status: 404 });
+  }
+
+  if (params.secao === "rotinas-agendadas") {
+    return <ScheduledJobsPage />;
   }
 
   const SectionIcon = section.icon;

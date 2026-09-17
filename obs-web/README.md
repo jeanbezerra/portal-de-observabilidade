@@ -50,6 +50,7 @@ Administração.
 - O envio congela o manifesto de tags, baixa o comprovante em PDF e mantém o registro no `localStorage` do navegador.
 - O calendário corporativo permite cadastrar, editar, filtrar e excluir datas; no protótipo, os registros ficam no `localStorage` do navegador.
 - O cadastro de fusos horários mantém um identificador IANA ativo como padrão e também usa o `localStorage` nesta etapa.
+- A gestão de rotinas agendadas oferece um mockup interativo dos comandos do Quartz; os dados e alterações permanecem somente na memória da página até a integração com a API.
 - Revisão técnica, aprovação, autenticação e armazenamento corporativo ainda dependem de integração com backend e BPMN.
 - Datadog e StackOpen aparecem no catálogo como soluções futuras, sem fluxo de solicitação ativo.
 
