@@ -85,6 +85,7 @@ type SummaryTone = "neutral" | "brand" | "warning" | "danger";
 type SortColumn =
   | "status"
   | "name"
+  | "group"
   | "schedule"
   | "nextExecution"
   | "lastResult";
@@ -210,6 +211,9 @@ function compareJobs(
   }
   if (column === "name") {
     return jobCollator.compare(first.name, second.name);
+  }
+  if (column === "group") {
+    return jobCollator.compare(first.group, second.group);
   }
   if (column === "schedule") {
     return jobCollator.compare(
@@ -440,7 +444,7 @@ const useStyles = makeStyles({
   },
   table: {
     width: "100%",
-    minWidth: "1120px",
+    minWidth: "1240px",
   },
   tableRow: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -1103,14 +1107,6 @@ export function ScheduledJobsPage() {
         </div>
       </header>
 
-      <MessageBar intent="info">
-        <MessageBarBody>
-          Mockup interativo: os comandos alteram somente os dados desta página.
-          A API deverá aplicar autorização, auditoria, controle de concorrência e
-          confirmação do estado retornado pelo Quartz.
-        </MessageBarBody>
-      </MessageBar>
-
       {notice ? (
         <MessageBar intent={notice.intent} role="status">
           <MessageBarBody>{notice.message}</MessageBarBody>
@@ -1344,6 +1340,13 @@ export function ScheduledJobsPage() {
                   </TableHeaderCell>
                   <TableHeaderCell
                     sortable
+                    sortDirection={getSortDirection("group")}
+                    onClick={() => toggleSort("group")}
+                  >
+                    Grupo
+                  </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
                     sortDirection={getSortDirection("schedule")}
                     onClick={() => toggleSort("schedule")}
                   >
@@ -1398,6 +1401,9 @@ export function ScheduledJobsPage() {
                       </TableCell>
                       <TableCell>
                         <Text weight="semibold">{job.name}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text>{job.group}</Text>
                       </TableCell>
                       <TableCell>
                         <Text>{trigger?.schedule ?? "Sem agendamento"}</Text>

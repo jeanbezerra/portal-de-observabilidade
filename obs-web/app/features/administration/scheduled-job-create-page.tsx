@@ -15,10 +15,15 @@ import {
   AddRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 
 import { PageBreadcrumb } from "../../components/page-breadcrumb";
+import {
+  defaultJobGroups,
+  type JobGroup,
+} from "./job-group-model";
+import { loadJobGroups } from "./job-group-storage";
 import {
   scheduledJobs,
   triggerTypes,
@@ -463,7 +468,20 @@ export function ScheduledJobCreatePage() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [draft, setDraft] = useState<CreateJobDraft>(initialDraft);
+  const [availableGroups, setAvailableGroups] = useState<JobGroup[]>(() =>
+    defaultJobGroups.filter((group) => group.active),
+  );
   const [showErrors, setShowErrors] = useState(false);
+
+  useEffect(() => {
+    const activeGroups = loadJobGroups().filter((group) => group.active);
+    setAvailableGroups(activeGroups);
+    setDraft((current) =>
+      activeGroups.some((group) => group.key === current.group)
+        ? current
+        : { ...current, group: activeGroups[0]?.key ?? "" },
+    );
+  }, []);
 
   const selectedJobType =
     jobTypeOptions.find((option) => option.id === draft.jobTypeId) ??
@@ -488,7 +506,9 @@ export function ScheduledJobCreatePage() {
     ? "Informe o grupo da rotina"
     : !isValidQuartzKey(normalizedGroup)
       ? "Use letras minúsculas, números, ponto, hífen ou sublinhado"
-      : undefined;
+      : !availableGroups.some((group) => group.key === normalizedGroup)
+        ? "Selecione um grupo ativo cadastrado"
+        : undefined;
   const expressionError =
     draft.createTrigger && !draft.expression.trim()
       ? "Informe a regra do agendamento"
@@ -651,16 +671,28 @@ export function ScheduledJobCreatePage() {
                 />
               </Field>
               <Field
-                label="Grupo"
+                label="Grupo da rotina"
                 required
-                hint="Exemplo: plataforma"
+                hint="Selecione um grupo ativo cadastrado em Grupos de rotinas"
                 validationState={showErrors && groupError ? "error" : "none"}
                 validationMessage={showErrors ? groupError : undefined}
               >
-                <Input
+                <Select
                   value={draft.group}
-                  onChange={(_, data) => updateDraft({ group: data.value })}
-                />
+                  disabled={availableGroups.length === 0}
+                  onChange={(event) =>
+                    updateDraft({ group: event.target.value })
+                  }
+                >
+                  {availableGroups.length === 0 ? (
+                    <option value="">Nenhum grupo ativo</option>
+                  ) : null}
+                  {availableGroups.map((group) => (
+                    <option key={group.id} value={group.key}>
+                      {group.name} ({group.key})
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field
                 className={styles.fullWidth}

@@ -16,6 +16,8 @@ import {
   CalendarMonthRegular,
   GlobeLocationFilled,
   GlobeLocationRegular,
+  FolderFilled,
+  FolderRegular,
   GroupFilled,
   GroupRegular,
   HomeFilled,
@@ -351,6 +353,13 @@ const navigationGroups: NavigationGroup[] = [
             end: true,
             regularIcon: GlobeLocationRegular,
             filledIcon: GlobeLocationFilled,
+          },
+          {
+            to: "/administracao/agendamentos/grupos-de-rotinas",
+            label: "Grupos de rotinas",
+            end: true,
+            regularIcon: FolderRegular,
+            filledIcon: FolderFilled,
           },
           {
             to: "/administracao/agendamentos/rotinas-agendadas",

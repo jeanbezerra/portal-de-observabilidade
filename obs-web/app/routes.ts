@@ -13,6 +13,10 @@ export default [
     "routes/administration-time-zones.tsx",
   ),
   route(
+    "administracao/agendamentos/grupos-de-rotinas",
+    "routes/administration-job-groups.tsx",
+  ),
+  route(
     "administracao/agendamentos/rotinas-agendadas/nova",
     "routes/administration-scheduled-job-create.tsx",
   ),
