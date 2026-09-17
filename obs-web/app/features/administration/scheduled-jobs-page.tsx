@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   Field,
   Input,
@@ -209,19 +208,28 @@ const useStyles = makeStyles({
   },
   table: {
     width: "100%",
-    minWidth: "1720px",
+    minWidth: "1320px",
+  },
+  tableRow: {
+    backgroundColor: tokens.colorNeutralBackground1,
+    "&:hover": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+    "&:focus-within": {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
   },
   jobCell: {
     display: "grid",
     gap: "2px",
-    minWidth: "260px",
-    maxWidth: "320px",
+    minWidth: "220px",
+    maxWidth: "280px",
   },
   scheduleCell: {
     display: "grid",
     gap: tokens.spacingVerticalXS,
-    minWidth: "260px",
-    maxWidth: "320px",
+    minWidth: "240px",
+    maxWidth: "300px",
   },
   timeCell: {
     display: "grid",
@@ -231,13 +239,6 @@ const useStyles = makeStyles({
   resultCell: {
     display: "grid",
     gap: tokens.spacingVerticalXS,
-    minWidth: "185px",
-  },
-  policyCell: {
-    display: "flex",
-    flexWrap: "wrap",
-    alignContent: "start",
-    gap: tokens.spacingHorizontalXS,
     minWidth: "210px",
   },
   actions: {
@@ -263,7 +264,7 @@ const useStyles = makeStyles({
     right: 0,
     width: "248px",
     minWidth: "248px",
-    backgroundColor: tokens.colorNeutralBackground1,
+    backgroundColor: "inherit",
     boxShadow: `-${tokens.strokeWidthThin} 0 0 ${tokens.colorNeutralStroke2}`,
   },
   secondary: {
@@ -702,7 +703,6 @@ export function ScheduledJobsPage() {
                   <TableHeaderCell>Próxima execução</TableHeaderCell>
                   <TableHeaderCell>Execução atual</TableHeaderCell>
                   <TableHeaderCell>Último resultado</TableHeaderCell>
-                  <TableHeaderCell>Políticas</TableHeaderCell>
                   <TableHeaderCell className={styles.actionsHeader}>
                     Ações
                   </TableHeaderCell>
@@ -716,14 +716,11 @@ export function ScheduledJobsPage() {
                   const hasError = triggerState === "ERROR";
 
                   return (
-                    <TableRow key={job.id}>
+                    <TableRow className={styles.tableRow} key={job.id}>
                       <TableCell>
                         <div className={styles.jobCell}>
                           <Text weight="semibold">{job.name}</Text>
                           <Text className={styles.monospace}>{job.group}</Text>
-                          <Text size={200} className={styles.secondary}>
-                            {job.description}
-                          </Text>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -732,8 +729,8 @@ export function ScheduledJobsPage() {
                           {trigger ? (
                             <>
                               <Text weight="semibold">{trigger.schedule}</Text>
-                              <Text size={200} className={styles.monospace}>
-                                {trigger.type} · {trigger.expression}
+                              <Text size={200} className={styles.secondary}>
+                                {trigger.type}
                               </Text>
                             </>
                           ) : (
@@ -751,12 +748,6 @@ export function ScheduledJobsPage() {
                           <Text size={200} className={styles.monospace}>
                             {trigger?.timeZone ?? "—"}
                           </Text>
-                          {trigger?.calendar !==
-                          "Sem calendário de exclusão" ? (
-                            <Text size={200} className={styles.secondary}>
-                              Exceto: {trigger?.calendar}
-                            </Text>
-                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -767,28 +758,10 @@ export function ScheduledJobsPage() {
                           <ExecutionResultBadge
                             result={job.lastExecution.result}
                           />
-                          <Text size={200}>{job.lastExecution.finishedAt}</Text>
                           <Text size={200} className={styles.secondary}>
+                            {job.lastExecution.finishedAt} ·{" "}
                             {job.lastExecution.duration}
                           </Text>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className={styles.policyCell}>
-                          {job.disallowConcurrent ? (
-                            <Badge appearance="outline">Sem concorrência</Badge>
-                          ) : (
-                            <Badge appearance="outline">Concorrência permitida</Badge>
-                          )}
-                          {job.requestsRecovery ? (
-                            <Badge appearance="outline">Recuperável</Badge>
-                          ) : null}
-                          {job.durable ? (
-                            <Badge appearance="outline">Durável</Badge>
-                          ) : null}
-                          {job.interruptable ? (
-                            <Badge appearance="outline">Interrompível</Badge>
-                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className={styles.actionsCell}>
