@@ -36,6 +36,7 @@ O servidor do build usa `http://localhost:3000` por padrão.
 - `/administracao/agendamentos/calendarios`: cadastro e gestão do calendário corporativo.
 - `/administracao/agendamentos/fusos-horarios`: cadastro e gestão dos fusos horários usados pelos sistemas.
 - `/administracao/agendamentos/rotinas-agendadas`: gestão das rotinas agendadas.
+- `/administracao/agendamentos/rotinas-agendadas/nova`: criação dedicada de uma rotina e de seu trigger inicial.
 - `/administracao/agendamentos/historico-execucoes`: histórico das execuções do scheduler.
 
 Os endereços anteriores `/administracao/calendario` e

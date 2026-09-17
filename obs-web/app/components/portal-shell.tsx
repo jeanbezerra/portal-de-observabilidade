@@ -355,7 +355,7 @@ const navigationGroups: NavigationGroup[] = [
           {
             to: "/administracao/agendamentos/rotinas-agendadas",
             label: "Rotinas agendadas",
-            end: true,
+            end: false,
             regularIcon: CalendarClockRegular,
             filledIcon: CalendarClockFilled,
           },

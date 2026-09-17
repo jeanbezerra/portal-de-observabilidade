@@ -25,6 +25,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  AddRegular,
   ArrowClockwiseRegular,
   CopyRegular,
   DeleteRegular,
@@ -36,10 +37,10 @@ import {
   SearchRegular,
   StopRegular,
 } from "@fluentui/react-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 
 import {
-  CreateScheduledJobDialog,
   DeleteScheduledJobDialog,
   ScheduleEditorDialog,
   type ScheduleDraft,
@@ -320,6 +321,8 @@ function SummaryCard({ value, label }: { value: number; label: string }) {
 
 export function ScheduledJobsPage() {
   const styles = useStyles();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<ScheduledJob[]>(() =>
     initialScheduledJobs.map((job) => ({
       ...job,
@@ -345,6 +348,24 @@ export function ScheduledJobsPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
     () => new Set(),
   );
+
+  useEffect(() => {
+    const createdJob = (
+      location.state as { createdJob?: ScheduledJob } | null
+    )?.createdJob;
+    if (!createdJob) return;
+
+    setJobs((current) =>
+      current.some((job) => job.id === createdJob.id)
+        ? current
+        : [...current, createdJob],
+    );
+    setNotice({
+      intent: "success",
+      message: `Rotina “${createdJob.name}” criada no mockup. Na integração, a API persistirá o JobDetail${createdJob.triggers.length > 0 ? " e o Trigger na mesma transação" : " durável sem um Trigger inicial"}.`,
+    });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   const groups = useMemo(
     () => [...new Set(jobs.map((job) => job.group))].sort(),
@@ -635,14 +656,6 @@ export function ScheduledJobsPage() {
     });
   }
 
-  function handleCreate(job: ScheduledJob) {
-    setJobs((current) => [...current, job]);
-    setNotice({
-      intent: "success",
-      message: `Rotina “${job.name}” criada no mockup. Na integração, a API persistirá o JobDetail e o Trigger na mesma operação.`,
-    });
-  }
-
   function handleSaveSchedule(job: ScheduledJob, draft: ScheduleDraft) {
     updateJob(job.id, (current) => ({
       ...current,
@@ -725,7 +738,15 @@ export function ScheduledJobsPage() {
           >
             Atualizar dados
           </Button>
-          <CreateScheduledJobDialog jobs={jobs} onCreate={handleCreate} />
+          <Button
+            as="a"
+            href="/administracao/agendamentos/rotinas-agendadas/nova"
+            appearance="primary"
+            size="large"
+            icon={<AddRegular />}
+          >
+            Criar rotina
+          </Button>
         </div>
       </header>
 
