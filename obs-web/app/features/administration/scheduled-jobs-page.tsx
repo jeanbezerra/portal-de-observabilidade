@@ -58,6 +58,8 @@ import {
 } from "./scheduled-jobs-model";
 import {
   ExecutionResultBadge,
+  getExecutionResultLabel,
+  getJobOperationalStatusLabel,
   JobOperationalStatus,
 } from "./scheduled-job-status";
 
@@ -67,6 +69,110 @@ const allTriggerTypes = "Todos os tipos" as const;
 
 type StateFilter = TriggerState | typeof allStates | "RUNNING";
 type TriggerTypeFilter = TriggerType | typeof allTriggerTypes;
+type SortColumn =
+  | "status"
+  | "name"
+  | "schedule"
+  | "nextExecution"
+  | "lastResult";
+type SortDirection = "ascending" | "descending";
+type SortState = {
+  column: SortColumn;
+  direction: SortDirection;
+};
+
+const jobCollator = new Intl.Collator("pt-BR", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+const monthIndexes: Record<string, number> = {
+  jan: 0,
+  fev: 1,
+  mar: 2,
+  abr: 3,
+  mai: 4,
+  jun: 5,
+  jul: 6,
+  ago: 7,
+  set: 8,
+  out: 9,
+  nov: 10,
+  dez: 11,
+};
+
+function parseDisplayedDate(value: string) {
+  const normalized = normalizeSearch(value);
+  const match = normalized.match(
+    /^(\d{1,2})\s+([a-z]{3})\.?\s+(\d{4}),\s+(\d{2}):(\d{2})$/,
+  );
+  if (!match) return undefined;
+
+  const [, day, month, year, hour, minute] = match;
+  const monthIndex = monthIndexes[month];
+  if (monthIndex === undefined) return undefined;
+
+  return Date.UTC(
+    Number(year),
+    monthIndex,
+    Number(day),
+    Number(hour),
+    Number(minute),
+  );
+}
+
+function compareNextExecutions(first: string, second: string) {
+  const firstDate = parseDisplayedDate(first);
+  const secondDate = parseDisplayedDate(second);
+
+  if (firstDate !== undefined && secondDate !== undefined) {
+    return firstDate - secondDate;
+  }
+  if (firstDate !== undefined) return -1;
+  if (secondDate !== undefined) return 1;
+  return jobCollator.compare(first, second);
+}
+
+function compareJobs(
+  first: ScheduledJob,
+  second: ScheduledJob,
+  column: SortColumn,
+) {
+  const firstTrigger = getPrimaryTrigger(first);
+  const secondTrigger = getPrimaryTrigger(second);
+
+  if (column === "status") {
+    return jobCollator.compare(
+      getJobOperationalStatusLabel({
+        execution: first.activeExecution,
+        triggerState: getJobTriggerState(first),
+      }),
+      getJobOperationalStatusLabel({
+        execution: second.activeExecution,
+        triggerState: getJobTriggerState(second),
+      }),
+    );
+  }
+  if (column === "name") {
+    return jobCollator.compare(first.name, second.name);
+  }
+  if (column === "schedule") {
+    return jobCollator.compare(
+      firstTrigger?.schedule ?? "Sem agendamento",
+      secondTrigger?.schedule ?? "Sem agendamento",
+    );
+  }
+  if (column === "nextExecution") {
+    return compareNextExecutions(
+      firstTrigger?.nextFireTime ?? "Não agendada",
+      secondTrigger?.nextFireTime ?? "Não agendada",
+    );
+  }
+  return jobCollator.compare(
+    getExecutionResultLabel(first.lastExecution.result),
+    getExecutionResultLabel(second.lastExecution.result),
+  );
+}
 
 const useStyles = makeStyles({
   page: {
@@ -348,6 +454,7 @@ export function ScheduledJobsPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [sort, setSort] = useState<SortState>();
 
   useEffect(() => {
     const createdJob = (
@@ -375,7 +482,7 @@ export function ScheduledJobsPage() {
   const visibleJobs = useMemo(() => {
     const normalizedSearch = normalizeSearch(search);
 
-    return jobs.filter((job) => {
+    const filteredJobs = jobs.filter((job) => {
       const trigger = getPrimaryTrigger(job);
       const state = getJobTriggerState(job);
       const matchesSearch =
@@ -402,7 +509,14 @@ export function ScheduledJobsPage() {
 
       return matchesSearch && matchesGroup && matchesState && matchesType;
     });
-  }, [groupFilter, jobs, search, stateFilter, triggerTypeFilter]);
+
+    if (!sort) return filteredJobs;
+
+    const direction = sort.direction === "ascending" ? 1 : -1;
+    return filteredJobs.sort(
+      (first, second) => compareJobs(first, second, sort.column) * direction,
+    );
+  }, [groupFilter, jobs, search, sort, stateFilter, triggerTypeFilter]);
 
   const runningCount = jobs.filter((job) => job.activeExecution).length;
   const pausedCount = jobs.filter(
@@ -463,6 +577,20 @@ export function ScheduledJobsPage() {
       }
       return next;
     });
+  }
+
+  function toggleSort(column: SortColumn) {
+    setSort((current) => ({
+      column,
+      direction:
+        current?.column === column && current.direction === "ascending"
+          ? "descending"
+          : "ascending",
+    }));
+  }
+
+  function getSortDirection(column: SortColumn) {
+    return sort?.column === column ? sort.direction : undefined;
   }
 
   function handlePauseSelected() {
@@ -933,11 +1061,41 @@ export function ScheduledJobsPage() {
                       "aria-label": "Selecionar todas as rotinas exibidas",
                     }}
                   />
-                  <TableHeaderCell>Estado</TableHeaderCell>
-                  <TableHeaderCell>Rotina</TableHeaderCell>
-                  <TableHeaderCell>Agendamento</TableHeaderCell>
-                  <TableHeaderCell>Próxima execução</TableHeaderCell>
-                  <TableHeaderCell>Último resultado</TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("status")}
+                    onClick={() => toggleSort("status")}
+                  >
+                    Estado
+                  </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("name")}
+                    onClick={() => toggleSort("name")}
+                  >
+                    Rotina
+                  </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("schedule")}
+                    onClick={() => toggleSort("schedule")}
+                  >
+                    Agendamento
+                  </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("nextExecution")}
+                    onClick={() => toggleSort("nextExecution")}
+                  >
+                    Próxima execução
+                  </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("lastResult")}
+                    onClick={() => toggleSort("lastResult")}
+                  >
+                    Último resultado
+                  </TableHeaderCell>
                   <TableHeaderCell className={styles.actionsHeader}>
                     Ações
                   </TableHeaderCell>

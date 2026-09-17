@@ -18,6 +18,32 @@ import type {
   TriggerState,
 } from "./scheduled-jobs-model";
 
+export function getJobOperationalStatusLabel({
+  execution,
+  triggerState,
+}: {
+  execution?: ActiveExecution;
+  triggerState: TriggerState;
+}) {
+  if (execution?.state === "RUNNING") return "Executando";
+  if (execution?.state === "INTERRUPTION_REQUESTED") {
+    return "Interrupção solicitada";
+  }
+  if (triggerState === "ERROR") return "Com erro";
+  if (triggerState === "PAUSED") return "Pausado";
+  if (triggerState === "BLOCKED") return "Bloqueado";
+  if (triggerState === "COMPLETE") return "Concluído";
+  if (triggerState === "NONE") return "Sob demanda";
+  return "Aguardando";
+}
+
+export function getExecutionResultLabel(result: ExecutionResult) {
+  if (result === "SUCCESS") return "Sucesso";
+  if (result === "FAILED") return "Falha";
+  if (result === "RECOVERED") return "Recuperada";
+  return "Sem execução";
+}
+
 const useStyles = makeStyles({
   operationalStatus: {
     display: "flex",
@@ -81,31 +107,23 @@ export function JobOperationalStatus({
 }) {
   const styles = useStyles();
 
-  let label = "Aguardando";
+  const label = getJobOperationalStatusLabel({ execution, triggerState });
   let dotClass = styles.brandDot;
   let animated = true;
 
-  if (execution?.state === "RUNNING") {
-    label = "Executando";
-  } else if (execution?.state === "INTERRUPTION_REQUESTED") {
-    label = "Interrupção solicitada";
+  if (execution?.state === "INTERRUPTION_REQUESTED") {
     dotClass = styles.warningDot;
   } else if (triggerState === "ERROR") {
-    label = "Com erro";
     dotClass = styles.dangerDot;
   } else if (triggerState === "PAUSED") {
-    label = "Pausado";
     dotClass = styles.warningDot;
     animated = false;
   } else if (triggerState === "BLOCKED") {
-    label = "Bloqueado";
     dotClass = styles.warningDot;
   } else if (triggerState === "COMPLETE") {
-    label = "Concluído";
     dotClass = styles.successDot;
     animated = false;
   } else if (triggerState === "NONE") {
-    label = "Sob demanda";
     dotClass = styles.neutralDot;
     animated = false;
   }
