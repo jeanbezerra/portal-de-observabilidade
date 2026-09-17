@@ -20,14 +20,10 @@ import type {
 
 const useStyles = makeStyles({
   operationalStatus: {
-    display: "grid",
-    gap: "2px",
-    minWidth: "180px",
-  },
-  operationalLine: {
     display: "flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalS,
+    minWidth: "148px",
   },
   operationalDot: {
     width: "10px",
@@ -86,57 +82,45 @@ export function JobOperationalStatus({
   const styles = useStyles();
 
   let label = "Aguardando";
-  let detail = "Próximo disparo programado";
   let dotClass = styles.brandDot;
   let animated = true;
 
   if (execution?.state === "RUNNING") {
     label = "Executando";
-    detail = `${execution.elapsed} · ${execution.schedulerInstance}`;
   } else if (execution?.state === "INTERRUPTION_REQUESTED") {
     label = "Interrupção solicitada";
-    detail = "Aguardando confirmação do handler";
     dotClass = styles.warningDot;
   } else if (triggerState === "ERROR") {
     label = "Com erro";
-    detail = "Trigger requer correção";
     dotClass = styles.dangerDot;
   } else if (triggerState === "PAUSED") {
     label = "Pausado";
-    detail = "Novos disparos suspensos";
     dotClass = styles.warningDot;
     animated = false;
   } else if (triggerState === "BLOCKED") {
     label = "Bloqueado";
-    detail = "Aguardando liberação do JobKey";
     dotClass = styles.warningDot;
   } else if (triggerState === "COMPLETE") {
     label = "Concluído";
-    detail = "Trigger sem novas execuções";
     dotClass = styles.successDot;
     animated = false;
   } else if (triggerState === "NONE") {
-    label = "Aguardando";
-    detail = "Disponível para disparo manual";
+    label = "Sob demanda";
     dotClass = styles.neutralDot;
+    animated = false;
   }
 
   return (
     <div className={styles.operationalStatus}>
-      <div className={styles.operationalLine}>
-        <span
-          aria-hidden="true"
-          className={mergeClasses(
-            styles.operationalDot,
-            dotClass,
-            animated && styles.pulse,
-          )}
-        />
-        <Text weight="semibold">{label}</Text>
-      </div>
-      <Text size={200} className={styles.secondary}>
-        {detail}
-      </Text>
+      <span
+        aria-hidden="true"
+        className={mergeClasses(
+          styles.operationalDot,
+          dotClass,
+          animated && styles.pulse,
+        )}
+      />
+      <Text weight="semibold">{label}</Text>
     </div>
   );
 }

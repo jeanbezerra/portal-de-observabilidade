@@ -229,7 +229,7 @@ const useStyles = makeStyles({
   },
   table: {
     width: "100%",
-    minWidth: "1320px",
+    minWidth: "1120px",
   },
   tableRow: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -248,28 +248,6 @@ const useStyles = makeStyles({
     "&:focus-within": {
       backgroundColor: tokens.colorBrandBackground2Hover,
     },
-  },
-  jobCell: {
-    display: "grid",
-    gap: "2px",
-    minWidth: "220px",
-    maxWidth: "280px",
-  },
-  scheduleCell: {
-    display: "grid",
-    gap: tokens.spacingVerticalXS,
-    minWidth: "240px",
-    maxWidth: "300px",
-  },
-  timeCell: {
-    display: "grid",
-    gap: "2px",
-    minWidth: "190px",
-  },
-  resultCell: {
-    display: "grid",
-    gap: tokens.spacingVerticalXS,
-    minWidth: "210px",
   },
   actions: {
     display: "flex",
@@ -299,10 +277,6 @@ const useStyles = makeStyles({
   },
   secondary: {
     color: tokens.colorNeutralForeground2,
-  },
-  monospace: {
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: tokens.fontSizeBase200,
   },
   tableFooter: {
     display: "flex",
@@ -977,47 +951,18 @@ export function ScheduledJobsPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <div className={styles.jobCell}>
-                          <Text weight="semibold">{job.name}</Text>
-                          <Text className={styles.monospace}>{job.group}</Text>
-                        </div>
+                        <Text weight="semibold">{job.name}</Text>
                       </TableCell>
                       <TableCell>
-                        <div className={styles.scheduleCell}>
-                          {trigger ? (
-                            <>
-                              <Text weight="semibold">{trigger.schedule}</Text>
-                              <Text size={200} className={styles.secondary}>
-                                {trigger.type}
-                              </Text>
-                            </>
-                          ) : (
-                            <Text size={200} className={styles.secondary}>
-                              JobDetail durável para uso sob demanda
-                            </Text>
-                          )}
-                        </div>
+                        <Text>{trigger?.schedule ?? "Sem agendamento"}</Text>
                       </TableCell>
                       <TableCell>
-                        <div className={styles.timeCell}>
-                          <Text weight="semibold">
-                            {trigger?.nextFireTime ?? "Não agendada"}
-                          </Text>
-                          <Text size={200} className={styles.monospace}>
-                            {trigger?.timeZone ?? "—"}
-                          </Text>
-                        </div>
+                        <Text>{trigger?.nextFireTime ?? "Não agendada"}</Text>
                       </TableCell>
                       <TableCell>
-                        <div className={styles.resultCell}>
-                          <ExecutionResultBadge
-                            result={job.lastExecution.result}
-                          />
-                          <Text size={200} className={styles.secondary}>
-                            {job.lastExecution.finishedAt} ·{" "}
-                            {job.lastExecution.duration}
-                          </Text>
-                        </div>
+                        <ExecutionResultBadge
+                          result={job.lastExecution.result}
+                        />
                       </TableCell>
                       <TableCell className={styles.actionsCell}>
                         <div className={styles.actions}>
