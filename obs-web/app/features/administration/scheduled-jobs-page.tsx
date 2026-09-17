@@ -253,15 +253,8 @@ const useStyles = makeStyles({
   headerCopy: {
     minWidth: 0,
   },
-  eyebrow: {
-    color: tokens.colorBrandForeground1,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-  },
   title: {
-    marginTop: tokens.spacingVerticalXS,
+    marginTop: 0,
     marginBottom: 0,
     fontSize: tokens.fontSizeHero800,
     fontWeight: tokens.fontWeightSemibold,
@@ -1079,7 +1072,6 @@ export function ScheduledJobsPage() {
 
       <header className={styles.header}>
         <div className={styles.headerCopy}>
-          <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
           <h1 className={styles.title}>Rotinas agendadas</h1>
           <p className={styles.lead}>
             Gerencie rotinas, acompanhe execuções em andamento e controle os

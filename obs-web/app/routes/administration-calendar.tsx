@@ -75,15 +75,8 @@ const useStyles = makeStyles({
       flexDirection: "column",
     },
   },
-  eyebrow: {
-    color: tokens.colorBrandForeground1,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-  },
   title: {
-    marginTop: tokens.spacingVerticalXS,
+    marginTop: 0,
     marginBottom: 0,
     fontSize: tokens.fontSizeHero800,
     lineHeight: tokens.lineHeightHero800,
@@ -366,7 +359,6 @@ export default function AdministrationCalendar() {
 
       <header className={styles.pageHeader}>
         <div>
-          <Text className={styles.eyebrow}>Administração · Agendamentos</Text>
           <h1 className={styles.title}>Calendário corporativo</h1>
           <p className={styles.lead}>
             Cadastre e gerencie feriados, datas comemorativas e outras datas

@@ -1,4 +1,4 @@
-import { makeStyles, Text, tokens } from "@fluentui/react-components";
+import { makeStyles, tokens } from "@fluentui/react-components";
 import {
   BuildingPeopleRegular,
   GroupRegular,
@@ -80,13 +80,6 @@ const useStyles = makeStyles({
   header: {
     display: "grid",
     gap: tokens.spacingVerticalS,
-  },
-  eyebrow: {
-    color: tokens.colorBrandForeground1,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
   },
   title: {
     margin: 0,
@@ -180,7 +173,6 @@ export default function Administration({ params }: Route.ComponentProps) {
       />
 
       <header className={styles.header}>
-        <Text className={styles.eyebrow}>Administração</Text>
         <h1 className={styles.title}>{section.title}</h1>
         <p className={styles.description}>{section.description}</p>
       </header>
