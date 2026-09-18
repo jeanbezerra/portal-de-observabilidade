@@ -16,6 +16,8 @@ import {
   CalendarClockRegular,
   CalendarMonthFilled,
   CalendarMonthRegular,
+  ChevronDownRegular,
+  ChevronRightRegular,
   GlobeLocationFilled,
   GlobeLocationRegular,
   FolderFilled,
@@ -36,8 +38,8 @@ import {
   PersonRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import { useState, type ReactNode } from "react";
-import { NavLink } from "react-router";
+import { useEffect, useState, type ReactNode } from "react";
+import { matchPath, NavLink, useLocation } from "react-router";
 
 const useStyles = makeStyles({
   app: {
@@ -236,12 +238,18 @@ const useStyles = makeStyles({
       display: "flex",
     },
   },
-  navLabel: {
-    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+  navGroupToggle: {
+    justifyContent: "space-between",
+    width: "100%",
+    minWidth: 0,
+    minHeight: "40px",
+    paddingRight: tokens.spacingHorizontalM,
+    paddingLeft: tokens.spacingHorizontalM,
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
     fontWeight: tokens.fontWeightSemibold,
     letterSpacing: "0.04em",
+    textAlign: "left",
     textTransform: "uppercase",
     "@media (max-width: 760px)": {
       display: "none",
@@ -250,13 +258,29 @@ const useStyles = makeStyles({
   collapsedLabel: {
     display: "none",
   },
-  navSubgroupLabel: {
-    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+  navSubgroupToggle: {
+    justifyContent: "space-between",
+    width: "100%",
+    minWidth: 0,
+    minHeight: "36px",
+    paddingRight: tokens.spacingHorizontalM,
+    paddingLeft: tokens.spacingHorizontalM,
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
     fontWeight: tokens.fontWeightSemibold,
+    textAlign: "left",
     "@media (max-width: 760px)": {
       display: "none",
+    },
+  },
+  navToggleIcon: {
+    flexShrink: 0,
+    fontSize: "16px",
+  },
+  collapsibleContentHidden: {
+    display: "none",
+    "@media (max-width: 760px)": {
+      display: "flex",
     },
   },
   navLink: {
@@ -334,19 +358,25 @@ type NavigationItem = {
   filledIcon: FluentIcon;
 };
 
+type NavigationSection = {
+  id: string;
+  label?: string;
+  items: NavigationItem[];
+};
+
 type NavigationGroup = {
+  id: string;
   label: string;
-  sections: Array<{
-    label?: string;
-    items: NavigationItem[];
-  }>;
+  sections: NavigationSection[];
 };
 
 const navigationGroups: NavigationGroup[] = [
   {
+    id: "portal",
     label: "Portal",
     sections: [
       {
+        id: "portal-principal",
         items: [
           {
             to: "/",
@@ -360,9 +390,11 @@ const navigationGroups: NavigationGroup[] = [
     ],
   },
   {
+    id: "servicos",
     label: "Serviços",
     sections: [
       {
+        id: "servicos-principal",
         items: [
           {
             to: "/orcamentos",
@@ -376,9 +408,11 @@ const navigationGroups: NavigationGroup[] = [
     ],
   },
   {
+    id: "administracao",
     label: "Administração",
     sections: [
       {
+        id: "identidade-acesso",
         label: "Identidade e acesso",
         items: [
           {
@@ -419,6 +453,7 @@ const navigationGroups: NavigationGroup[] = [
         ],
       },
       {
+        id: "agendamentos",
         label: "Agendamentos",
         items: [
           {
@@ -462,12 +497,91 @@ const navigationGroups: NavigationGroup[] = [
   },
 ];
 
+function isNavigationItemActive(pathname: string, item: NavigationItem) {
+  return Boolean(
+    matchPath({ path: item.to, end: item.end }, pathname),
+  );
+}
+
 export function PortalShell({ children }: { children: ReactNode }) {
   const styles = useStyles();
+  const location = useLocation();
   const [isNavigationCollapsed, setIsNavigationCollapsed] = useState(false);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const navigationToggleLabel = isNavigationCollapsed
     ? "Expandir navegação"
     : "Recolher navegação";
+
+  useEffect(() => {
+    const activeGroup = navigationGroups.find((group) =>
+      group.sections.some((section) =>
+        section.items.some((item) =>
+          isNavigationItemActive(location.pathname, item),
+        ),
+      ),
+    );
+
+    if (!activeGroup) {
+      return;
+    }
+
+    const activeSection = activeGroup.sections.find((section) =>
+      section.items.some((item) =>
+        isNavigationItemActive(location.pathname, item),
+      ),
+    );
+
+    setCollapsedGroupIds((currentIds) => {
+      if (!currentIds.has(activeGroup.id)) {
+        return currentIds;
+      }
+
+      const nextIds = new Set(currentIds);
+      nextIds.delete(activeGroup.id);
+      return nextIds;
+    });
+
+    if (activeSection?.label) {
+      setCollapsedSectionIds((currentIds) => {
+        if (!currentIds.has(activeSection.id)) {
+          return currentIds;
+        }
+
+        const nextIds = new Set(currentIds);
+        nextIds.delete(activeSection.id);
+        return nextIds;
+      });
+    }
+  }, [location.pathname]);
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroupIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(groupId)) {
+        nextIds.delete(groupId);
+      } else {
+        nextIds.add(groupId);
+      }
+      return nextIds;
+    });
+  };
+
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSectionIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(sectionId)) {
+        nextIds.delete(sectionId);
+      } else {
+        nextIds.add(sectionId);
+      }
+      return nextIds;
+    });
+  };
 
   return (
     <div className={styles.app}>
@@ -545,110 +659,170 @@ export function PortalShell({ children }: { children: ReactNode }) {
               )}
               aria-label="Navegação principal"
             >
-              {navigationGroups.map((group) => (
-                <div
-                  className={styles.navGroup}
-                  key={group.label}
-                  role="group"
-                  aria-label={group.label}
-                >
-                  <span
-                    className={mergeClasses(
-                      styles.navLabel,
-                      isNavigationCollapsed && styles.collapsedLabel,
-                    )}
-                  >
-                    {group.label}
-                  </span>
+              {navigationGroups.map((group) => {
+                const isGroupExpanded = !collapsedGroupIds.has(group.id);
+                const groupContentId = `navigation-group-${group.id}`;
+
+                return (
                   <div
-                    className={mergeClasses(
-                      styles.navSubgroups,
-                      isNavigationCollapsed && styles.navSubgroupsCollapsed,
-                    )}
+                    className={styles.navGroup}
+                    key={group.id}
+                    role="group"
+                    aria-label={group.label}
                   >
-                    {group.sections.map((section, sectionIndex) => (
-                      <div
-                        className={styles.navSubgroup}
-                        key={section.label ?? `${group.label}-${sectionIndex}`}
-                        role={section.label ? "group" : undefined}
-                        aria-label={section.label}
-                      >
-                        {section.label ? (
-                          <span
-                            className={mergeClasses(
-                              styles.navSubgroupLabel,
-                              isNavigationCollapsed && styles.collapsedLabel,
-                            )}
+                    <Button
+                      className={mergeClasses(
+                        styles.navGroupToggle,
+                        isNavigationCollapsed && styles.collapsedLabel,
+                      )}
+                      appearance="subtle"
+                      icon={
+                        isGroupExpanded ? (
+                          <ChevronDownRegular
+                            className={styles.navToggleIcon}
+                          />
+                        ) : (
+                          <ChevronRightRegular
+                            className={styles.navToggleIcon}
+                          />
+                        )
+                      }
+                      iconPosition="after"
+                      aria-expanded={isGroupExpanded}
+                      aria-controls={groupContentId}
+                      onClick={() => toggleGroup(group.id)}
+                    >
+                      {group.label}
+                    </Button>
+                    <div
+                      id={groupContentId}
+                      className={mergeClasses(
+                        styles.navSubgroups,
+                        isNavigationCollapsed && styles.navSubgroupsCollapsed,
+                        !isNavigationCollapsed &&
+                          !isGroupExpanded &&
+                          styles.collapsibleContentHidden,
+                      )}
+                    >
+                      {group.sections.map((section) => {
+                        const isSectionExpanded =
+                          !collapsedSectionIds.has(section.id);
+                        const sectionContentId =
+                          `navigation-section-${section.id}`;
+
+                        return (
+                          <div
+                            className={styles.navSubgroup}
+                            key={section.id}
+                            role={section.label ? "group" : undefined}
+                            aria-label={section.label}
                           >
-                            {section.label}
-                          </span>
-                        ) : null}
-                        <div className={styles.navItems}>
-                          {section.items.map((item) => {
-                            const RegularIcon = item.regularIcon;
-                            const FilledIcon = item.filledIcon;
-                            const navLink = (
-                              <NavLink
-                                key={item.to}
-                                to={item.to}
-                                end={item.end}
-                                aria-label={
-                                  isNavigationCollapsed ? item.label : undefined
-                                }
-                                className={({ isActive }) =>
-                                  mergeClasses(
-                                    styles.navLink,
-                                    isNavigationCollapsed &&
-                                      styles.navLinkCollapsed,
-                                    isActive && styles.activeNavLink,
+                            {section.label ? (
+                              <Button
+                                className={mergeClasses(
+                                  styles.navSubgroupToggle,
+                                  isNavigationCollapsed &&
+                                    styles.collapsedLabel,
+                                )}
+                                appearance="subtle"
+                                icon={
+                                  isSectionExpanded ? (
+                                    <ChevronDownRegular
+                                      className={styles.navToggleIcon}
+                                    />
+                                  ) : (
+                                    <ChevronRightRegular
+                                      className={styles.navToggleIcon}
+                                    />
                                   )
                                 }
+                                iconPosition="after"
+                                aria-expanded={isSectionExpanded}
+                                aria-controls={sectionContentId}
+                                onClick={() => toggleSection(section.id)}
                               >
-                                {({ isActive }) => (
-                                  <>
-                                    {isActive ? (
-                                      <FilledIcon
-                                        className={styles.navIcon}
-                                        aria-hidden="true"
-                                      />
-                                    ) : (
-                                      <RegularIcon
-                                        className={styles.navIcon}
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                    <span
-                                      className={mergeClasses(
+                                {section.label}
+                              </Button>
+                            ) : null}
+                            <div
+                              id={sectionContentId}
+                              className={mergeClasses(
+                                styles.navItems,
+                                !isNavigationCollapsed &&
+                                  section.label &&
+                                  !isSectionExpanded &&
+                                  styles.collapsibleContentHidden,
+                              )}
+                            >
+                              {section.items.map((item) => {
+                                const RegularIcon = item.regularIcon;
+                                const FilledIcon = item.filledIcon;
+                                const navLink = (
+                                  <NavLink
+                                    key={item.to}
+                                    to={item.to}
+                                    end={item.end}
+                                    aria-label={
+                                      isNavigationCollapsed
+                                        ? item.label
+                                        : undefined
+                                    }
+                                    className={({ isActive }) =>
+                                      mergeClasses(
+                                        styles.navLink,
                                         isNavigationCollapsed &&
-                                          styles.navLinkLabelCollapsed,
-                                      )}
-                                    >
-                                      {item.label}
-                                    </span>
-                                  </>
-                                )}
-                              </NavLink>
-                            );
+                                          styles.navLinkCollapsed,
+                                        isActive && styles.activeNavLink,
+                                      )
+                                    }
+                                  >
+                                    {({ isActive }) => (
+                                      <>
+                                        {isActive ? (
+                                          <FilledIcon
+                                            className={styles.navIcon}
+                                            aria-hidden="true"
+                                          />
+                                        ) : (
+                                          <RegularIcon
+                                            className={styles.navIcon}
+                                            aria-hidden="true"
+                                          />
+                                        )}
+                                        <span
+                                          className={mergeClasses(
+                                            isNavigationCollapsed &&
+                                              styles.navLinkLabelCollapsed,
+                                          )}
+                                        >
+                                          {item.label}
+                                        </span>
+                                      </>
+                                    )}
+                                  </NavLink>
+                                );
 
-                            return isNavigationCollapsed ? (
-                              <Tooltip
-                                key={item.to}
-                                content={item.label}
-                                relationship="description"
-                                positioning="after"
-                              >
-                                {navLink}
-                              </Tooltip>
-                            ) : (
-                              navLink
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                                return isNavigationCollapsed ? (
+                                  <Tooltip
+                                    key={item.to}
+                                    content={item.label}
+                                    relationship="description"
+                                    positioning="after"
+                                  >
+                                    {navLink}
+                                  </Tooltip>
+                                ) : (
+                                  navLink
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </nav>
           </div>
         </aside>
