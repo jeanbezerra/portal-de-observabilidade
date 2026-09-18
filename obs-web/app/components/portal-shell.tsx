@@ -1,8 +1,10 @@
 import {
   Avatar,
+  Button,
   makeStyles,
   mergeClasses,
   Text,
+  Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import {
@@ -26,13 +28,15 @@ import {
   HistoryRegular,
   KeyFilled,
   KeyRegular,
+  PanelLeftContractRegular,
+  PanelLeftExpandRegular,
   PersonFilled,
   PersonKeyFilled,
   PersonKeyRegular,
   PersonRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 const useStyles = makeStyles({
@@ -115,9 +119,21 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateColumns: "248px minmax(0, 1fr)",
     minHeight: "calc(100vh - 72px)",
+    transitionDuration: tokens.durationNormal,
+    transitionProperty: "grid-template-columns",
+    transitionTimingFunction: tokens.curveEasyEase,
+    "@media (prefers-reduced-motion: reduce)": {
+      transitionDuration: "0.01ms",
+    },
     "@media (max-width: 760px)": {
       gridTemplateColumns: "minmax(0, 1fr)",
       minHeight: "calc(100vh - 64px)",
+    },
+  },
+  workspaceCollapsed: {
+    gridTemplateColumns: "72px minmax(0, 1fr)",
+    "@media (max-width: 760px)": {
+      gridTemplateColumns: "minmax(0, 1fr)",
     },
   },
   sidebar: {
@@ -140,6 +156,34 @@ const useStyles = makeStyles({
       borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
     },
   },
+  sidebarCollapsed: {
+    paddingRight: tokens.spacingHorizontalS,
+    paddingLeft: tokens.spacingHorizontalS,
+    "@media (max-width: 760px)": {
+      paddingTop: tokens.spacingVerticalS,
+      paddingRight: tokens.spacingHorizontalS,
+      paddingBottom: tokens.spacingVerticalS,
+      paddingLeft: tokens.spacingHorizontalS,
+    },
+  },
+  sidebarContent: {
+    display: "grid",
+    gap: tokens.spacingVerticalM,
+  },
+  sidebarControls: {
+    display: "flex",
+    justifyContent: "flex-end",
+    "@media (max-width: 760px)": {
+      display: "none",
+    },
+  },
+  sidebarControlsCollapsed: {
+    justifyContent: "center",
+  },
+  collapseButton: {
+    minWidth: "44px",
+    minHeight: "44px",
+  },
   nav: {
     display: "grid",
     gap: tokens.spacingVerticalL,
@@ -147,6 +191,14 @@ const useStyles = makeStyles({
       display: "flex",
       gap: tokens.spacingHorizontalXS,
       width: "max-content",
+    },
+  },
+  navCollapsed: {
+    justifyItems: "center",
+    gap: tokens.spacingVerticalM,
+    "@media (max-width: 760px)": {
+      justifyItems: "stretch",
+      gap: tokens.spacingHorizontalXS,
     },
   },
   navGroup: {
@@ -161,6 +213,12 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalL,
     "@media (max-width: 760px)": {
       display: "flex",
+      gap: tokens.spacingHorizontalXS,
+    },
+  },
+  navSubgroupsCollapsed: {
+    gap: tokens.spacingVerticalM,
+    "@media (max-width: 760px)": {
       gap: tokens.spacingHorizontalXS,
     },
   },
@@ -188,6 +246,9 @@ const useStyles = makeStyles({
     "@media (max-width: 760px)": {
       display: "none",
     },
+  },
+  collapsedLabel: {
+    display: "none",
   },
   navSubgroupLabel: {
     padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
@@ -222,6 +283,26 @@ const useStyles = makeStyles({
     },
     "@media (max-width: 760px)": {
       minWidth: "132px",
+    },
+  },
+  navLinkCollapsed: {
+    justifyContent: "center",
+    width: "44px",
+    minWidth: "44px",
+    paddingRight: 0,
+    paddingLeft: 0,
+    "@media (max-width: 760px)": {
+      justifyContent: "flex-start",
+      width: "auto",
+      minWidth: "132px",
+      paddingRight: tokens.spacingHorizontalM,
+      paddingLeft: tokens.spacingHorizontalM,
+    },
+  },
+  navLinkLabelCollapsed: {
+    display: "none",
+    "@media (max-width: 760px)": {
+      display: "inline",
     },
   },
   activeNavLink: {
@@ -383,6 +464,10 @@ const navigationGroups: NavigationGroup[] = [
 
 export function PortalShell({ children }: { children: ReactNode }) {
   const styles = useStyles();
+  const [isNavigationCollapsed, setIsNavigationCollapsed] = useState(false);
+  const navigationToggleLabel = isNavigationCollapsed
+    ? "Expandir navegação"
+    : "Recolher navegação";
 
   return (
     <div className={styles.app}>
@@ -408,73 +493,164 @@ export function PortalShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div className={styles.workspace}>
-        <aside className={styles.sidebar}>
-          <nav className={styles.nav} aria-label="Navegação principal">
-            {navigationGroups.map((group) => (
-              <div
-                className={styles.navGroup}
-                key={group.label}
-                role="group"
-                aria-label={group.label}
+      <div
+        className={mergeClasses(
+          styles.workspace,
+          isNavigationCollapsed && styles.workspaceCollapsed,
+        )}
+      >
+        <aside
+          className={mergeClasses(
+            styles.sidebar,
+            isNavigationCollapsed && styles.sidebarCollapsed,
+          )}
+        >
+          <div className={styles.sidebarContent}>
+            <div
+              className={mergeClasses(
+                styles.sidebarControls,
+                isNavigationCollapsed && styles.sidebarControlsCollapsed,
+              )}
+            >
+              <Tooltip
+                content={navigationToggleLabel}
+                relationship="description"
+                positioning="after"
               >
-                <span className={styles.navLabel}>{group.label}</span>
-                <div className={styles.navSubgroups}>
-                  {group.sections.map((section, sectionIndex) => (
-                    <div
-                      className={styles.navSubgroup}
-                      key={section.label ?? `${group.label}-${sectionIndex}`}
-                      role={section.label ? "group" : undefined}
-                      aria-label={section.label}
-                    >
-                      {section.label ? (
-                        <span className={styles.navSubgroupLabel}>
-                          {section.label}
-                        </span>
-                      ) : null}
-                      <div className={styles.navItems}>
-                        {section.items.map((item) => {
-                          const RegularIcon = item.regularIcon;
-                          const FilledIcon = item.filledIcon;
-                          return (
-                            <NavLink
-                              key={item.to}
-                              to={item.to}
-                              end={item.end}
-                              className={({ isActive }) =>
-                                mergeClasses(
-                                  styles.navLink,
-                                  isActive && styles.activeNavLink,
-                                )
-                              }
-                            >
-                              {({ isActive }) => (
-                                <>
-                                  {isActive ? (
-                                    <FilledIcon
-                                      className={styles.navIcon}
-                                      aria-hidden="true"
-                                    />
-                                  ) : (
-                                    <RegularIcon
-                                      className={styles.navIcon}
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                  <span>{item.label}</span>
-                                </>
-                              )}
-                            </NavLink>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </nav>
+                <Button
+                  className={styles.collapseButton}
+                  appearance="subtle"
+                  icon={
+                    isNavigationCollapsed ? (
+                      <PanelLeftExpandRegular />
+                    ) : (
+                      <PanelLeftContractRegular />
+                    )
+                  }
+                  aria-label={navigationToggleLabel}
+                  aria-controls="navegacao-principal"
+                  aria-expanded={!isNavigationCollapsed}
+                  onClick={() =>
+                    setIsNavigationCollapsed((isCollapsed) => !isCollapsed)
+                  }
+                />
+              </Tooltip>
+            </div>
 
+            <nav
+              id="navegacao-principal"
+              className={mergeClasses(
+                styles.nav,
+                isNavigationCollapsed && styles.navCollapsed,
+              )}
+              aria-label="Navegação principal"
+            >
+              {navigationGroups.map((group) => (
+                <div
+                  className={styles.navGroup}
+                  key={group.label}
+                  role="group"
+                  aria-label={group.label}
+                >
+                  <span
+                    className={mergeClasses(
+                      styles.navLabel,
+                      isNavigationCollapsed && styles.collapsedLabel,
+                    )}
+                  >
+                    {group.label}
+                  </span>
+                  <div
+                    className={mergeClasses(
+                      styles.navSubgroups,
+                      isNavigationCollapsed && styles.navSubgroupsCollapsed,
+                    )}
+                  >
+                    {group.sections.map((section, sectionIndex) => (
+                      <div
+                        className={styles.navSubgroup}
+                        key={section.label ?? `${group.label}-${sectionIndex}`}
+                        role={section.label ? "group" : undefined}
+                        aria-label={section.label}
+                      >
+                        {section.label ? (
+                          <span
+                            className={mergeClasses(
+                              styles.navSubgroupLabel,
+                              isNavigationCollapsed && styles.collapsedLabel,
+                            )}
+                          >
+                            {section.label}
+                          </span>
+                        ) : null}
+                        <div className={styles.navItems}>
+                          {section.items.map((item) => {
+                            const RegularIcon = item.regularIcon;
+                            const FilledIcon = item.filledIcon;
+                            const navLink = (
+                              <NavLink
+                                key={item.to}
+                                to={item.to}
+                                end={item.end}
+                                aria-label={
+                                  isNavigationCollapsed ? item.label : undefined
+                                }
+                                className={({ isActive }) =>
+                                  mergeClasses(
+                                    styles.navLink,
+                                    isNavigationCollapsed &&
+                                      styles.navLinkCollapsed,
+                                    isActive && styles.activeNavLink,
+                                  )
+                                }
+                              >
+                                {({ isActive }) => (
+                                  <>
+                                    {isActive ? (
+                                      <FilledIcon
+                                        className={styles.navIcon}
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <RegularIcon
+                                        className={styles.navIcon}
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span
+                                      className={mergeClasses(
+                                        isNavigationCollapsed &&
+                                          styles.navLinkLabelCollapsed,
+                                      )}
+                                    >
+                                      {item.label}
+                                    </span>
+                                  </>
+                                )}
+                              </NavLink>
+                            );
+
+                            return isNavigationCollapsed ? (
+                              <Tooltip
+                                key={item.to}
+                                content={item.label}
+                                relationship="description"
+                                positioning="after"
+                              >
+                                {navLink}
+                              </Tooltip>
+                            ) : (
+                              navLink
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
         </aside>
 
         <main id="conteudo-principal" className={styles.main} tabIndex={-1}>
