@@ -38,8 +38,13 @@ import {
   PersonRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { matchPath, NavLink, useLocation } from "react-router";
+
+import {
+  loadNavigationPreferences,
+  saveNavigationPreferences,
+} from "./navigation-preferences";
 
 const useStyles = makeStyles({
   app: {
@@ -497,6 +502,15 @@ const navigationGroups: NavigationGroup[] = [
   },
 ];
 
+const navigationGroupIds = new Set(
+  navigationGroups.map((group) => group.id),
+);
+const navigationSectionIds = new Set(
+  navigationGroups.flatMap((group) =>
+    group.sections.map((section) => section.id),
+  ),
+);
+
 function isNavigationItemActive(pathname: string, item: NavigationItem) {
   return Boolean(
     matchPath({ path: item.to, end: item.end }, pathname),
@@ -506,6 +520,7 @@ function isNavigationItemActive(pathname: string, item: NavigationItem) {
 export function PortalShell({ children }: { children: ReactNode }) {
   const styles = useStyles();
   const location = useLocation();
+  const previousPathnameRef = useRef(location.pathname);
   const [isNavigationCollapsed, setIsNavigationCollapsed] = useState(false);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
     () => new Set(),
@@ -513,11 +528,49 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [hasLoadedNavigationPreferences, setHasLoadedNavigationPreferences] =
+    useState(false);
   const navigationToggleLabel = isNavigationCollapsed
     ? "Expandir navegação"
     : "Recolher navegação";
 
   useEffect(() => {
+    const preferences = loadNavigationPreferences({
+      groupIds: navigationGroupIds,
+      sectionIds: navigationSectionIds,
+    });
+
+    setIsNavigationCollapsed(preferences.sidebarCollapsed);
+    setCollapsedGroupIds(new Set(preferences.collapsedGroupIds));
+    setCollapsedSectionIds(new Set(preferences.collapsedSectionIds));
+    setHasLoadedNavigationPreferences(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedNavigationPreferences) return;
+
+    saveNavigationPreferences({
+      sidebarCollapsed: isNavigationCollapsed,
+      collapsedGroupIds: Array.from(collapsedGroupIds).sort(),
+      collapsedSectionIds: Array.from(collapsedSectionIds).sort(),
+    });
+  }, [
+    collapsedGroupIds,
+    collapsedSectionIds,
+    hasLoadedNavigationPreferences,
+    isNavigationCollapsed,
+  ]);
+
+  useEffect(() => {
+    if (
+      !hasLoadedNavigationPreferences ||
+      previousPathnameRef.current === location.pathname
+    ) {
+      return;
+    }
+
+    previousPathnameRef.current = location.pathname;
+
     const activeGroup = navigationGroups.find((group) =>
       group.sections.some((section) =>
         section.items.some((item) =>
@@ -557,7 +610,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         return nextIds;
       });
     }
-  }, [location.pathname]);
+  }, [hasLoadedNavigationPreferences, location.pathname]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroupIds((currentIds) => {
