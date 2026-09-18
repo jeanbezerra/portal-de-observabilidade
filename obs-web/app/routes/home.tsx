@@ -147,54 +147,6 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     lineHeight: tokens.lineHeightBase300,
   },
-  process: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    padding: tokens.spacingHorizontalXL,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusXLarge,
-    backgroundColor: tokens.colorNeutralBackground1,
-    "@media (max-width: 900px)": {
-      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    },
-    "@media (max-width: 520px)": {
-      gridTemplateColumns: "minmax(0, 1fr)",
-      padding: tokens.spacingHorizontalM,
-    },
-  },
-  processStep: {
-    position: "relative",
-    display: "grid",
-    gap: tokens.spacingVerticalS,
-    padding: tokens.spacingHorizontalL,
-    "&:not(:last-child)::after": {
-      position: "absolute",
-      top: "38px",
-      right: "-12px",
-      width: "24px",
-      height: "1px",
-      backgroundColor: tokens.colorNeutralStroke1,
-      content: '""',
-    },
-    "@media (max-width: 900px)": {
-      "&:not(:last-child)::after": {
-        display: "none",
-      },
-    },
-  },
-  processNumber: {
-    display: "grid",
-    placeItems: "center",
-    width: "36px",
-    height: "36px",
-    borderRadius: tokens.borderRadiusCircular,
-    color: tokens.colorNeutralForegroundOnBrand,
-    backgroundColor: tokens.colorBrandBackground,
-    fontWeight: tokens.fontWeightSemibold,
-  },
-  processText: {
-    color: tokens.colorNeutralForeground2,
-  },
 });
 
 const tools = [
@@ -220,13 +172,6 @@ const tools = [
     status: "Em breve",
     icon: "/icons/stackopen.svg",
   },
-];
-
-const process = [
-  ["Dimensione", "Informe a infraestrutura e os serviços adicionais."],
-  ["Revise", "Confira o escopo e a estimativa antes do envio."],
-  ["Aprove", "A equipe técnica e os gestores analisam a solicitação."],
-  ["Formalize", "O orçamento em PDF registra exatamente o que foi enviado."],
 ];
 
 export default function Home() {
@@ -316,28 +261,6 @@ export default function Home() {
               </Card>
             );
           })}
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="process-title">
-        <div>
-          <h2 id="process-title" className={styles.sectionTitle}>
-            Como funciona
-          </h2>
-          <p className={styles.sectionDescription}>
-            Um fluxo simples, inspirado no processo BPMN de solicitação.
-          </p>
-        </div>
-        <div className={styles.process}>
-          {process.map(([title, description], index) => (
-            <div className={styles.processStep} key={title}>
-              <span className={styles.processNumber}>{index + 1}</span>
-              <Text weight="semibold">{title}</Text>
-              <Text className={styles.processText} size={200}>
-                {description}
-              </Text>
-            </div>
-          ))}
         </div>
       </section>
     </div>
