@@ -9,8 +9,9 @@ O arquivo `application.properties` representa o ambiente local e usa, por padrã
 - API: `http://localhost:8081`
 - Swagger UI: `http://localhost:8081/`
 - OpenAPI JSON: `http://localhost:8081/api-docs`
-- PostgreSQL: `jdbc:postgresql://localhost:5432/obs_scheduler`
-- Usuário e senha: `obs_scheduler`
+- PostgreSQL: `jdbc:postgresql://localhost:5432/postgres`
+- Usuário e senha: `postgres`
+- Pool de conexões: mínimo `2` e máximo `5`
 
 Os valores podem ser substituídos pelas variáveis `SERVER_PORT`, `DB_URL`,
 `DB_USERNAME`, `DB_PASSWORD`, `DB_POOL_MAX_SIZE`, `DB_POOL_MIN_IDLE` e

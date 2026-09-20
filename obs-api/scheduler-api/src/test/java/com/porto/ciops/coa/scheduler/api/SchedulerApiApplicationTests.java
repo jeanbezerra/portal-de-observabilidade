@@ -36,7 +36,10 @@ class SchedulerApiApplicationTests {
 	void shouldExposeOpenApiDescription() throws Exception {
 		mockMvc.perform(get("/api-docs"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.info.title", is("Scheduler API")));
+				.andExpect(jsonPath("$.info.title", is("Scheduler API")))
+				.andExpect(jsonPath("$.info.description", is("API administrativa para gestão do Quartz Scheduler.")))
+				.andExpect(jsonPath("$.info.version", is("v1")))
+				.andExpect(jsonPath("$.info.contact.name", is("CIOPS - COA")));
 	}
 
 	@Test
