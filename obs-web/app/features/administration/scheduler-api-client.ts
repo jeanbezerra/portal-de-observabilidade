@@ -146,7 +146,7 @@ export type JobTypeOption = {
   id: string;
   name: string;
   description: string;
-  jobClass: string;
+  type: string;
   disallowConcurrent: boolean;
   persistJobData: boolean;
   interruptable: boolean;
@@ -275,13 +275,10 @@ function jobPayload(job: ScheduledJob) {
     name: job.name,
     group: job.group,
     description: job.description,
-    jobClass: job.jobClass,
+    type: job.type,
+    httpRequest: job.httpRequest,
     durable: job.durable,
     requestsRecovery: job.requestsRecovery,
-    disallowConcurrent: job.disallowConcurrent,
-    persistJobData: job.persistJobData,
-    interruptable: job.interruptable,
-    jobData: job.jobData,
     triggers: job.triggers.map((trigger) => ({
       key: trigger.key,
       group: trigger.group,

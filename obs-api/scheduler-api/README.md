@@ -38,11 +38,20 @@ A API expõe sob `/api/v1`:
 - JobDetails, triggers e ações operacionais em `/jobs`;
 - histórico auditável em `/executions`.
 
-Jobs cujas classes estão no classpath são registrados diretamente no Quartz.
-Tipos apenas catalogados pelo portal usam o executor administrativo da API até
-que sua implementação seja implantada, preservando no contrato o nome lógico da
-classe. O histórico de início, término, recuperação, falha e solicitação de
-interrupção fica nas tabelas próprias criadas pela migration `V2`.
+O catálogo expõe o tipo declarativo `HTTP_REQUEST`. Uma única implementação
+Quartz executa chamadas `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` e
+`OPTIONS`, com query string, cabeçalhos, cookies, corpo JSON/raw/form, Basic,
+Bearer, API key, OAuth 2.0 Client Credentials, timeouts, redirecionamento,
+status esperados e retentativas configuráveis. Não é necessário publicar uma
+classe Java para cada rotina.
+
+Senhas, tokens e API keys não são persistidos. A definição usa referências no
+formato `env:NOME_DA_VARIAVEL`, resolvidas apenas no momento da execução. Os
+hosts permitidos podem ser restringidos por `HTTP_EXECUTOR_ALLOWED_HOSTS`, com
+valores exatos ou curingas como `*.internal.example` separados por vírgula.
+
+O histórico de início, término, recuperação, falha, interrupção e o status HTTP
+final fica nas tabelas administrativas criadas pelas migrations.
 
 `DailyTimeIntervalTrigger` segue o fuso padrão da JVM, pois esse tipo de trigger
 do Quartz não oferece configuração de fuso por instância. Em ambientes que o

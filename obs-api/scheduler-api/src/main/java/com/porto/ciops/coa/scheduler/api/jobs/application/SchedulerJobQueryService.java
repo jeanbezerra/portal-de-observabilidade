@@ -3,7 +3,7 @@ package com.porto.ciops.coa.scheduler.api.jobs.application;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ActiveExecutionResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionSummaryResponse;
-import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobDataEntryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerResponse;
 import com.porto.ciops.coa.scheduler.api.support.ApplicationProblemException;
@@ -39,10 +39,13 @@ public class SchedulerJobQueryService {
 
 	private final Scheduler scheduler;
 	private final JdbcTemplate jdbc;
+	private final tools.jackson.databind.ObjectMapper objectMapper;
 
-	public SchedulerJobQueryService(Scheduler scheduler, JdbcTemplate jdbc) {
+	public SchedulerJobQueryService(Scheduler scheduler, JdbcTemplate jdbc,
+			tools.jackson.databind.ObjectMapper objectMapper) {
 		this.scheduler = scheduler;
 		this.jdbc = jdbc;
+		this.objectMapper = objectMapper;
 	}
 
 	public List<JobResponse> listJobs() throws SchedulerException {
@@ -82,31 +85,6 @@ public class SchedulerJobQueryService {
 				""", SchedulerJobQueryService::mapExecution, safeLimit);
 	}
 
-	List<JobDataEntryResponse> loadJobData(JobKey key, boolean maskSensitive) {
-		List<JobDataEntryResponse> entries = jdbc.query("""
-				SELECT data_key, data_type, data_value, sensitive
-				FROM public.scheduler_job_data
-				WHERE job_group = ? AND job_name = ?
-				ORDER BY data_key
-				""", (resultSet, rowNumber) -> {
-			boolean sensitive = resultSet.getBoolean("sensitive");
-			String value = maskSensitive && sensitive ? "••••••••" : resultSet.getString("data_value");
-			return new JobDataEntryResponse(resultSet.getString("data_key"), resultSet.getString("data_type"), value, sensitive);
-		}, key.getGroup(), key.getName());
-		if (!entries.isEmpty()) return entries;
-		try {
-			JobDetail detail = scheduler.getJobDetail(key);
-			if (detail == null) return List.of();
-			return detail.getJobDataMap().entrySet().stream()
-					.filter(entry -> !entry.getKey().startsWith("_"))
-					.map(entry -> new JobDataEntryResponse(entry.getKey(), "String", String.valueOf(entry.getValue()), false))
-					.sorted(Comparator.comparing(JobDataEntryResponse::key)).toList();
-		}
-		catch (SchedulerException exception) {
-			throw new IllegalStateException(exception);
-		}
-	}
-
 	TriggerResponse getTrigger(TriggerKey key) throws SchedulerException {
 		Trigger trigger = scheduler.getTrigger(key);
 		if (trigger == null) {
@@ -136,15 +114,16 @@ public class SchedulerJobQueryService {
 				? detail.isPersistJobDataAfterExecution() : metadata.persistJobData();
 		boolean interruptable = metadata == null
 				? InterruptableJob.class.isAssignableFrom(detail.getJobClass()) : metadata.interruptable();
-		String logicalClass = metadata == null
-				? detail.getJobDataMap().getString("_logicalJobClass") : metadata.logicalJobClass();
-		if (logicalClass == null || logicalClass.isBlank()) logicalClass = detail.getJobClass().getName();
+		String jobType = metadata == null ? detail.getJobDataMap().getString("_jobType") : metadata.jobType();
+		if (jobType == null || jobType.isBlank()) jobType = "LEGACY_JAVA";
+		HttpRequestConfiguration httpRequest = metadata == null
+				? null : deserializeConfiguration(metadata.executionConfiguration());
 
 		return new JobResponse(
 				key.getGroup() + "." + key.getName(), key.getName(), key.getGroup(),
-				metadata == null ? nullToEmpty(detail.getDescription()) : metadata.description(), logicalClass,
+				metadata == null ? nullToEmpty(detail.getDescription()) : metadata.description(), jobType, httpRequest,
 				detail.isDurable(), detail.requestsRecovery(), disallowConcurrent, persistJobData, interruptable,
-				triggers, activeExecution, loadLastExecution(key), loadJobData(key, true));
+				triggers, activeExecution, loadLastExecution(key));
 	}
 
 	private TriggerResponse toTriggerResponse(Trigger trigger, TriggerMetadata metadata) throws SchedulerException {
@@ -213,13 +192,25 @@ public class SchedulerJobQueryService {
 
 	private JobMetadata loadJobMetadata(JobKey key) {
 		List<JobMetadata> rows = jdbc.query("""
-				SELECT description, logical_job_class, disallow_concurrent, persist_job_data, interruptable
+				SELECT description, job_type, execution_configuration,
+				       disallow_concurrent, persist_job_data, interruptable
 				FROM public.scheduler_job_metadata WHERE job_group = ? AND job_name = ?
 				""", (resultSet, rowNumber) -> new JobMetadata(
-				resultSet.getString("description"), resultSet.getString("logical_job_class"),
+				resultSet.getString("description"), resultSet.getString("job_type"),
+				resultSet.getString("execution_configuration"),
 				resultSet.getBoolean("disallow_concurrent"), resultSet.getBoolean("persist_job_data"),
 				resultSet.getBoolean("interruptable")), key.getGroup(), key.getName());
 		return rows.isEmpty() ? null : rows.getFirst();
+	}
+
+	private HttpRequestConfiguration deserializeConfiguration(String value) {
+		if (value == null || value.isBlank()) return null;
+		try {
+			return objectMapper.readValue(value, HttpRequestConfiguration.class);
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("A configuração HTTP armazenada é inválida.", exception);
+		}
 	}
 
 	private TriggerMetadata loadTriggerMetadata(TriggerKey key) {
@@ -337,7 +328,8 @@ public class SchedulerJobQueryService {
 
 	private record JobMetadata(
 			String description,
-			String logicalJobClass,
+			String jobType,
+			String executionConfiguration,
 			boolean disallowConcurrent,
 			boolean persistJobData,
 			boolean interruptable) {

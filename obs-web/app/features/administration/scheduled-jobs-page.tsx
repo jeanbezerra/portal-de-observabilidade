@@ -718,7 +718,9 @@ export function ScheduledJobsPage() {
             job.name,
             job.group,
             job.description,
-            job.jobClass,
+            job.type,
+            job.httpRequest?.url ?? "",
+            job.httpRequest?.method ?? "",
             trigger?.key ?? "",
           ].join(" "),
         ).includes(normalizedSearch);

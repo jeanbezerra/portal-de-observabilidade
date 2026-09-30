@@ -18,11 +18,51 @@ export type TriggerState =
 export type ExecutionState = "RUNNING" | "INTERRUPTION_REQUESTED";
 export type ExecutionResult = "SUCCESS" | "FAILED" | "RECOVERED" | "NONE";
 
-export type JobDataEntry = {
-  key: string;
-  type: "String" | "Integer" | "Boolean" | "JSON";
-  value: string;
-  sensitive?: boolean;
+export type HttpRequestParameter = {
+  name: string;
+  value: string | null;
+  secretRef: string | null;
+};
+
+export type HttpAuthentication = {
+  type: "NONE" | "BASIC" | "BEARER" | "API_KEY" | "OAUTH2_CLIENT_CREDENTIALS";
+  username: string;
+  passwordSecretRef: string;
+  tokenSecretRef: string;
+  apiKeyName: string;
+  apiKeyLocation: "HEADER" | "QUERY";
+  tokenUrl: string;
+  clientId: string;
+  clientSecretRef: string;
+  scopes: string[];
+  audience: string;
+  clientAuthenticationMethod: "BASIC" | "REQUEST_BODY";
+  tokenParameters: HttpRequestParameter[];
+};
+
+export type HttpRequestConfiguration = {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+  url: string;
+  queryParameters: HttpRequestParameter[];
+  headers: HttpRequestParameter[];
+  cookies: HttpRequestParameter[];
+  authentication: HttpAuthentication;
+  bodyType: "NONE" | "RAW" | "JSON" | "FORM_URLENCODED";
+  body: string;
+  formParameters: HttpRequestParameter[];
+  contentType: string;
+  connectTimeoutSeconds: number;
+  requestTimeoutSeconds: number;
+  redirectPolicy: "NEVER" | "NORMAL";
+  httpVersion: "HTTP_1_1" | "HTTP_2";
+  expectedStatusCodes: number[];
+  maxResponseBytes: number;
+  retry: {
+    maxAttempts: number;
+    initialDelayMillis: number;
+    backoffMultiplier: number;
+    statusCodes: number[];
+  };
 };
 
 export type JobTrigger = {
@@ -59,7 +99,8 @@ export type ScheduledJob = {
   name: string;
   group: string;
   description: string;
-  jobClass: string;
+  type: string;
+  httpRequest: HttpRequestConfiguration | null;
   durable: boolean;
   requestsRecovery: boolean;
   disallowConcurrent: boolean;
@@ -73,7 +114,6 @@ export type ScheduledJob = {
     duration: string;
     message: string;
   };
-  jobData: JobDataEntry[];
 };
 
 export function getPrimaryTrigger(job: ScheduledJob) {

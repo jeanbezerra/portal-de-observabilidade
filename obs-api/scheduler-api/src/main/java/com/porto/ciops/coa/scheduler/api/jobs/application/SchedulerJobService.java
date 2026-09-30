@@ -4,11 +4,11 @@ import com.porto.ciops.coa.scheduler.api.administration.application.Administrati
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobKeyRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
-import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobDataEntryRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.infrastructure.quartz.HttpRequestJob;
 import com.porto.ciops.coa.scheduler.api.support.ApplicationProblemException;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.quartz.InterruptableJob;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -29,6 +28,7 @@ import org.quartz.TriggerKey;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class SchedulerJobService {
@@ -38,17 +38,19 @@ public class SchedulerJobService {
 	private final AdministrationCatalogService catalogs;
 	private final SchedulerJobQueryService queries;
 	private final SchedulerTriggerFactory triggerFactory;
-	private final SchedulerJobClassResolver jobClasses;
+	private final HttpRequestConfigurationValidator httpValidator;
+	private final ObjectMapper objectMapper;
 
 	public SchedulerJobService(Scheduler scheduler, JdbcTemplate jdbc, AdministrationCatalogService catalogs,
 			SchedulerJobQueryService queries, SchedulerTriggerFactory triggerFactory,
-			SchedulerJobClassResolver jobClasses) {
+			HttpRequestConfigurationValidator httpValidator, ObjectMapper objectMapper) {
 		this.scheduler = scheduler;
 		this.jdbc = jdbc;
 		this.catalogs = catalogs;
 		this.queries = queries;
 		this.triggerFactory = triggerFactory;
-		this.jobClasses = jobClasses;
+		this.httpValidator = httpValidator;
+		this.objectMapper = objectMapper;
 	}
 
 	public List<JobResponse> listJobs() throws SchedulerException {
@@ -76,25 +78,18 @@ public class SchedulerJobService {
 					"Já existe uma rotina com este nome e grupo.");
 		}
 		validateRequestCollections(request);
+		httpValidator.validate(request.httpRequest());
 
 		JobDataMap dataMap = new JobDataMap();
-		dataMap.put("_logicalJobClass", request.jobClass());
-		for (JobDataEntryRequest entry : request.jobData()) {
-			if (entry.key().startsWith("_")) {
-				throw ApplicationProblemException.invalidInput("Chave reservada",
-						"Chaves de JobDataMap iniciadas por sublinhado são reservadas pela API.");
-			}
-			dataMap.put(entry.key(), entry.value());
-		}
+		dataMap.put("_jobType", request.type());
 
-		JobDetail detail = JobBuilder.newJob(jobClasses.resolve(request))
+		JobDetail detail = JobBuilder.newJob(HttpRequestJob.class)
 				.withIdentity(key)
 				.withDescription(request.description())
 				.storeDurably(request.durable())
 				.requestRecovery(request.requestsRecovery())
 				.usingJobData(dataMap)
 				.build();
-		validateDeployedJobContract(detail, request);
 
 		Set<Trigger> triggers = new HashSet<>();
 		for (TriggerRequest triggerRequest : request.triggers()) {
@@ -205,6 +200,10 @@ public class SchedulerJobService {
 	@Transactional
 	public JobResponse duplicateJob(String group, String name) throws SchedulerException {
 		JobResponse source = getJob(group, name);
+		if (!"HTTP_REQUEST".equals(source.type()) || source.httpRequest() == null) {
+			throw ApplicationProblemException.conflict("Rotina legada",
+					"Somente rotinas HTTP_REQUEST podem ser duplicadas pelo contrato atual.");
+		}
 		String suffix = Long.toString(System.currentTimeMillis(), 36);
 		String copyName = source.name() + "-copia-" + suffix.substring(Math.max(0, suffix.length() - 5));
 		List<TriggerRequest> triggers = source.triggers().stream()
@@ -213,13 +212,9 @@ public class SchedulerJobService {
 						trigger.group(), trigger.type(), trigger.expression(), trigger.timeZone(),
 						trigger.calendar(), trigger.priority(), trigger.misfireInstruction()))
 				.toList();
-		List<JobDataEntryRequest> data = queries.loadJobData(JobKey.jobKey(name, group), false).stream()
-				.map(entry -> new JobDataEntryRequest(entry.key(), entry.type(), entry.value(), entry.sensitive()))
-				.toList();
 		JobResponse copy = createJob(new JobRequest(
 				copyName, source.group(), "Cópia de " + source.name() + ". Revise o agendamento antes de ativar.",
-				source.jobClass(), source.durable(), source.requestsRecovery(), source.disallowConcurrent(),
-				source.persistJobData(), source.interruptable(), data, triggers));
+				source.type(), source.httpRequest(), source.durable(), source.requestsRecovery(), triggers));
 		scheduler.pauseJob(JobKey.jobKey(copy.name(), copy.group()));
 		return getJob(copy.group(), copy.name());
 	}
@@ -268,18 +263,11 @@ public class SchedulerJobService {
 		Instant now = Instant.now();
 		jdbc.update("""
 				INSERT INTO public.scheduler_job_metadata (
-				    job_name, job_group, description, logical_job_class, disallow_concurrent,
-				    persist_job_data, interruptable, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-				""", request.name(), request.group(), request.description(), request.jobClass(),
-				request.disallowConcurrent(), request.persistJobData(), request.interruptable(), timestamp(now), timestamp(now));
-		for (JobDataEntryRequest entry : request.jobData()) {
-			jdbc.update("""
-					INSERT INTO public.scheduler_job_data (
-					    job_name, job_group, data_key, data_type, data_value, sensitive
-					) VALUES (?, ?, ?, ?, ?, ?)
-					""", request.name(), request.group(), entry.key(), entry.type(), entry.value(), entry.sensitive());
-		}
+				    job_name, job_group, description, logical_job_class, job_type, execution_configuration,
+				    disallow_concurrent, persist_job_data, interruptable, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""", request.name(), request.group(), request.description(), HttpRequestJob.class.getName(),
+				request.type(), serializeConfiguration(request), true, false, true, timestamp(now), timestamp(now));
 		for (TriggerRequest trigger : request.triggers()) {
 			upsertTriggerMetadata(JobKey.jobKey(request.name(), request.group()), trigger);
 		}
@@ -304,14 +292,6 @@ public class SchedulerJobService {
 	}
 
 	private static void validateRequestCollections(JobRequest request) {
-		Set<String> jobDataKeys = new HashSet<>();
-		for (JobDataEntryRequest entry : request.jobData()) {
-			if (!jobDataKeys.add(entry.key())) {
-				throw ApplicationProblemException.invalidInput("JobDataMap duplicado",
-						"Cada chave do JobDataMap deve aparecer apenas uma vez.");
-			}
-		}
-
 		Set<TriggerKey> triggerKeys = new HashSet<>();
 		for (TriggerRequest trigger : request.triggers()) {
 			if (!triggerKeys.add(TriggerKey.triggerKey(trigger.key(), trigger.group()))) {
@@ -321,13 +301,12 @@ public class SchedulerJobService {
 		}
 	}
 
-	private void validateDeployedJobContract(JobDetail detail, JobRequest request) {
-		if (jobClasses.isManagedFallback(detail.getJobClass())) return;
-		if (detail.isConcurrentExecutionDisallowed() != request.disallowConcurrent()
-				|| detail.isPersistJobDataAfterExecution() != request.persistJobData()
-				|| (request.interruptable() && !InterruptableJob.class.isAssignableFrom(detail.getJobClass()))) {
-			throw ApplicationProblemException.conflict("Contrato do job divergente",
-					"A implementação publicada não corresponde às capacidades definidas no catálogo.");
+	private String serializeConfiguration(JobRequest request) {
+		try {
+			return objectMapper.writeValueAsString(request.httpRequest());
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("Não foi possível serializar a configuração HTTP.", exception);
 		}
 	}
 

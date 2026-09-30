@@ -9,6 +9,8 @@ import {
   DialogTitle,
   DialogTrigger,
   makeStyles,
+  MessageBar,
+  MessageBarBody,
   Tab,
   TabList,
   Table,
@@ -30,7 +32,7 @@ import {
   TriggerStateBadge,
 } from "./scheduled-job-status";
 
-type DetailTab = "definition" | "triggers" | "execution" | "data";
+type DetailTab = "definition" | "triggers" | "execution" | "request";
 
 const useStyles = makeStyles({
   surface: {
@@ -179,6 +181,15 @@ export function ScheduledJobDetailsDialog({
   const [selectedTab, setSelectedTab] = useState<DetailTab>("definition");
   const hasActiveExecution = Boolean(job.activeExecution);
   const triggerNowDisabled = job.disallowConcurrent && hasActiveExecution;
+  const httpParameters = job.httpRequest
+    ? [
+        ...job.httpRequest.queryParameters.map((parameter) => ({ location: "Query", ...parameter })),
+        ...job.httpRequest.headers.map((parameter) => ({ location: "Cabeçalho", ...parameter })),
+        ...job.httpRequest.cookies.map((parameter) => ({ location: "Cookie", ...parameter })),
+        ...job.httpRequest.formParameters.map((parameter) => ({ location: "Formulário", ...parameter })),
+        ...job.httpRequest.authentication.tokenParameters.map((parameter) => ({ location: "Token OAuth", ...parameter })),
+      ]
+    : [];
 
   return (
     <Dialog>
@@ -213,8 +224,8 @@ export function ScheduledJobDetailsDialog({
               <Tab id={`${tabIdPrefix}-execution`} value="execution">
                 Execução
               </Tab>
-              <Tab id={`${tabIdPrefix}-data`} value="data">
-                JobDataMap ({job.jobData.length})
+              <Tab id={`${tabIdPrefix}-request`} value="request">
+                Requisição HTTP
               </Tab>
             </TabList>
 
@@ -228,16 +239,15 @@ export function ScheduledJobDetailsDialog({
                   <div>
                     <h3 className={styles.sectionTitle}>JobDetail</h3>
                     <Text className={styles.secondary}>
-                      Definição persistida que identifica o handler executável e
-                      suas políticas.
+                      Definição persistida do executor e de suas políticas operacionais.
                     </Text>
                   </div>
                   <dl className={styles.definitionGrid}>
                     <DefinitionItem term="JobKey">
                       <Text className={styles.monospace}>{job.id}</Text>
                     </DefinitionItem>
-                    <DefinitionItem term="Classe do job">
-                      <Text className={styles.monospace}>{job.jobClass}</Text>
+                    <DefinitionItem term="Tipo do job">
+                      <Text className={styles.monospace}>{job.type}</Text>
                     </DefinitionItem>
                     <DefinitionItem term="Descrição">
                       {job.description}
@@ -273,11 +283,9 @@ export function ScheduledJobDetailsDialog({
                     </Badge>
                     <Badge
                       appearance="tint"
-                      color={job.persistJobData ? "informative" : "subtle"}
+                      color="subtle"
                     >
-                      {job.persistJobData
-                        ? "Persiste JobDataMap após executar"
-                        : "Não persiste alterações do JobDataMap"}
+                      Configuração HTTP imutável durante a execução
                     </Badge>
                   </div>
                 </section>
@@ -421,50 +429,76 @@ export function ScheduledJobDetailsDialog({
               </div>
             ) : null}
 
-            {selectedTab === "data" ? (
+            {selectedTab === "request" ? (
               <div
                 className={styles.tabPanel}
                 role="tabpanel"
-                aria-labelledby={`${tabIdPrefix}-data`}
+                aria-labelledby={`${tabIdPrefix}-request`}
               >
-                <Text className={styles.secondary}>
-                  Valores enviados ao handler. A API deve ocultar chaves
-                  sensíveis antes de responder ao portal.
-                </Text>
-                <div className={styles.dataPanel}>
-                  <Table
-                    className={styles.dataTable}
-                    aria-label="Dados do JobDataMap"
-                  >
-                    <TableHeader>
-                      <TableRow>
-                        <TableHeaderCell>Chave</TableHeaderCell>
-                        <TableHeaderCell>Tipo</TableHeaderCell>
-                        <TableHeaderCell>Valor</TableHeaderCell>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {job.jobData.map((entry) => (
-                        <TableRow key={entry.key}>
-                          <TableCell>
-                            <Text className={styles.monospace}>{entry.key}</Text>
-                          </TableCell>
-                          <TableCell>{entry.type}</TableCell>
-                          <TableCell>
-                            <Text className={styles.monospace}>
-                              {entry.value}
-                            </Text>
-                            {entry.sensitive ? (
-                              <Badge appearance="tint" color="subtle">
-                                Protegido
-                              </Badge>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                {job.httpRequest ? (
+                  <>
+                    <dl className={styles.definitionGrid}>
+                      <DefinitionItem term="Método e URL">
+                        <Text className={styles.monospace}>
+                          {job.httpRequest.method} {job.httpRequest.url}
+                        </Text>
+                      </DefinitionItem>
+                      <DefinitionItem term="Autenticação">
+                        {job.httpRequest.authentication.type}
+                      </DefinitionItem>
+                      <DefinitionItem term="Corpo">
+                        {job.httpRequest.bodyType} · {job.httpRequest.contentType || "Content-Type não definido"}
+                      </DefinitionItem>
+                      <DefinitionItem term="Timeouts">
+                        Conexão {job.httpRequest.connectTimeoutSeconds}s · total {job.httpRequest.requestTimeoutSeconds}s
+                      </DefinitionItem>
+                      <DefinitionItem term="Retentativas">
+                        Até {job.httpRequest.retry.maxAttempts} tentativa(s)
+                      </DefinitionItem>
+                      <DefinitionItem term="Resposta aceita">
+                        {job.httpRequest.expectedStatusCodes.length > 0
+                          ? job.httpRequest.expectedStatusCodes.join(", ")
+                          : "Qualquer status 2xx"}
+                      </DefinitionItem>
+                    </dl>
+                    <Text className={styles.secondary}>
+                      Valores protegidos aparecem apenas como referência de ambiente.
+                    </Text>
+                    <div className={styles.dataPanel}>
+                      <Table className={styles.dataTable} aria-label="Parâmetros da requisição HTTP">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHeaderCell>Local</TableHeaderCell>
+                            <TableHeaderCell>Nome</TableHeaderCell>
+                            <TableHeaderCell>Valor ou referência</TableHeaderCell>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {httpParameters.map((parameter, index) => (
+                            <TableRow key={`${parameter.location}-${parameter.name}-${index}`}>
+                              <TableCell>{parameter.location}</TableCell>
+                              <TableCell><Text className={styles.monospace}>{parameter.name}</Text></TableCell>
+                              <TableCell>
+                                <Text className={styles.monospace}>
+                                  {parameter.secretRef ?? parameter.value ?? ""}
+                                </Text>
+                                {parameter.secretRef ? (
+                                  <Badge appearance="tint" color="subtle">Referência protegida</Badge>
+                                ) : null}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                ) : (
+                  <MessageBar intent="warning">
+                    <MessageBarBody>
+                      Esta rotina usa uma definição legada e não possui configuração HTTP.
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
               </div>
             ) : null}
           </DialogContent>

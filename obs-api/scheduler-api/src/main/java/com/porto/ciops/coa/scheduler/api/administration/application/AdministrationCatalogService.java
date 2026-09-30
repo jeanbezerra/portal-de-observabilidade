@@ -191,18 +191,9 @@ public class AdministrationCatalogService {
 
 	public List<JobTypeResponse> listJobTypes() {
 		return List.of(
-				new JobTypeResponse("calendar-sync", "Sincronização de calendários",
-						"Atualiza feriados e exceções operacionais usados pelos triggers.",
-						"br.com.porto.scheduler.jobs.CalendarSyncJob", true, false, false),
-				new JobTypeResponse("billing-close", "Fechamento de faturamento",
-						"Consolida lançamentos e publica o fechamento financeiro do período.",
-						"br.com.porto.scheduler.jobs.BillingCloseJob", true, true, true),
-				new JobTypeResponse("regulatory-report", "Relatório regulatório",
-						"Gera e entrega relatórios periódicos para os destinos configurados.",
-						"br.com.porto.scheduler.jobs.RegulatoryReportJob", true, false, true),
-				new JobTypeResponse("metric-compaction", "Compactação de métricas",
-						"Compacta séries históricas conforme a política de retenção definida.",
-						"br.com.porto.scheduler.jobs.MetricCompactionJob", false, true, true));
+				new JobTypeResponse("HTTP_REQUEST", "Requisição HTTP",
+						"Aciona uma API interna ou externa com método, parâmetros, autenticação e corpo configuráveis.",
+						"HTTP_REQUEST", true, false, true));
 	}
 
 	@Transactional

@@ -36,8 +36,8 @@ class AdministrationCatalogApiTests {
 
 		mockMvc.perform(get("/api/v1/job-types"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[?(@.id == 'calendar-sync')].jobClass")
-						.value("br.com.porto.scheduler.jobs.CalendarSyncJob"));
+				.andExpect(jsonPath("$[0].id", is("HTTP_REQUEST")))
+				.andExpect(jsonPath("$[0].type", is("HTTP_REQUEST")));
 	}
 
 	@Test

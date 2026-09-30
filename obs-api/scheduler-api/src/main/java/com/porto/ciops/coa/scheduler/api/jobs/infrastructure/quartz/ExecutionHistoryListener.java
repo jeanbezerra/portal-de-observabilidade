@@ -53,12 +53,20 @@ public class ExecutionHistoryListener implements JobListener {
 		String result = jobException != null ? "FAILED" : context.isRecovering() ? "RECOVERED" : "SUCCESS";
 		String message = jobException != null
 				? safeMessage(jobException)
-				: context.isRecovering() ? "Execução recuperada e concluída." : "Execução concluída com sucesso.";
+				: successMessage(context);
 		jdbc.update("""
 				UPDATE public.scheduler_execution_history
 				SET finished_at = ?, duration_ms = ?, result = ?, message = ?
 				WHERE fire_instance_id = ?
 				""", timestamp(Instant.now()), context.getJobRunTime(), result, message, context.getFireInstanceId());
+	}
+
+	private static String successMessage(JobExecutionContext context) {
+		if (context.isRecovering()) return "Execução recuperada e concluída.";
+		Object executionResult = context.getResult();
+		if (executionResult == null || executionResult.toString().isBlank()) return "Execução concluída com sucesso.";
+		String message = executionResult.toString();
+		return message.length() > 1000 ? message.substring(0, 1000) : message;
 	}
 
 	private static String schedulerInstance(JobExecutionContext context) {

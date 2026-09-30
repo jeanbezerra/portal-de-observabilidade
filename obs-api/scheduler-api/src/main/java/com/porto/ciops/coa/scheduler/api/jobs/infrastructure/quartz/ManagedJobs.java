@@ -10,6 +10,11 @@ import org.quartz.UnableToInterruptJobException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Compatibility-only job classes for definitions persisted before HTTP_REQUEST.
+ * They are not exposed by the catalog and no new job can be created with them.
+ */
+@Deprecated(forRemoval = true)
 public final class ManagedJobs {
 
 	private ManagedJobs() {
@@ -22,12 +27,12 @@ public final class ManagedJobs {
 
 		@Override
 		public void execute(JobExecutionContext context) throws JobExecutionException {
-			String logicalClass = context.getMergedJobDataMap().getString("_logicalJobClass");
-			LOGGER.info("Execução administrativa da rotina {}.{} ({})",
-					context.getJobDetail().getKey().getGroup(), context.getJobDetail().getKey().getName(), logicalClass);
+			LOGGER.warn("A rotina legada {}.{} não possui executor e deve ser removida ou recriada como HTTP_REQUEST.",
+					context.getJobDetail().getKey().getGroup(), context.getJobDetail().getKey().getName());
 			if (interruptionRequested.get() || Thread.currentThread().isInterrupted()) {
-				throw new JobExecutionException("Execução interrompida antes do processamento.");
+				throw new JobExecutionException("Execução legada interrompida.");
 			}
+			throw new JobExecutionException("Rotina legada sem executor. Recrie-a como HTTP_REQUEST.");
 		}
 
 		@Override

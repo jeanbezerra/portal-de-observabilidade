@@ -26,10 +26,16 @@ import {
 import { loadJobGroups } from "./job-group-storage";
 import {
   triggerTypes,
-  type JobDataEntry,
   type ScheduledJob,
   type TriggerType,
 } from "./scheduled-jobs-model";
+import {
+  HttpRequestEditor,
+  initialHttpRequestDraft,
+  toHttpRequestConfiguration,
+  validateHttpRequestDraft,
+  type HttpRequestDraft,
+} from "./http-request-editor";
 import {
   createScheduledJob,
   getSchedulerApiError,
@@ -42,43 +48,13 @@ const jobsRoute = "/administracao/agendamentos/rotinas-agendadas";
 
 const fallbackJobTypeOptions: JobTypeOption[] = [
   {
-    id: "calendar-sync",
-    name: "Sincronização de calendários",
+    id: "HTTP_REQUEST",
+    name: "Requisição HTTP",
     description:
-      "Atualiza feriados e exceções operacionais usados pelos triggers.",
-    jobClass: "br.com.porto.scheduler.jobs.CalendarSyncJob",
+      "Aciona uma API interna ou externa com método, parâmetros, autenticação e corpo configuráveis.",
+    type: "HTTP_REQUEST",
     disallowConcurrent: true,
     persistJobData: false,
-    interruptable: false,
-  },
-  {
-    id: "billing-close",
-    name: "Fechamento de faturamento",
-    description:
-      "Consolida lançamentos e publica o fechamento financeiro do período.",
-    jobClass: "br.com.porto.scheduler.jobs.BillingCloseJob",
-    disallowConcurrent: true,
-    persistJobData: true,
-    interruptable: true,
-  },
-  {
-    id: "regulatory-report",
-    name: "Relatório regulatório",
-    description:
-      "Gera e entrega relatórios periódicos para os destinos configurados.",
-    jobClass: "br.com.porto.scheduler.jobs.RegulatoryReportJob",
-    disallowConcurrent: true,
-    persistJobData: false,
-    interruptable: true,
-  },
-  {
-    id: "metric-compaction",
-    name: "Compactação de métricas",
-    description:
-      "Compacta séries históricas conforme a política de retenção definida.",
-    jobClass: "br.com.porto.scheduler.jobs.MetricCompactionJob",
-    disallowConcurrent: false,
-    persistJobData: true,
     interruptable: true,
   },
 ];
@@ -141,7 +117,7 @@ type CreateJobDraft = {
   jobTypeId: string;
   durable: boolean;
   requestsRecovery: boolean;
-  jobData: string;
+  httpRequest: HttpRequestDraft;
   createTrigger: boolean;
   triggerType: TriggerType;
   expression: string;
@@ -155,10 +131,10 @@ const initialDraft: CreateJobDraft = {
   name: "",
   group: "plataforma",
   description: "",
-  jobTypeId: "calendar-sync",
+  jobTypeId: "HTTP_REQUEST",
   durable: true,
   requestsRecovery: false,
-  jobData: "{}",
+  httpRequest: initialHttpRequestDraft,
   createTrigger: true,
   triggerType: "CronTrigger",
   expression: "0 0 8 ? * MON-FRI",
@@ -271,10 +247,6 @@ const useStyles = makeStyles({
   },
   textarea: {
     minHeight: "92px",
-  },
-  codeTextarea: {
-    minHeight: "126px",
-    fontFamily: tokens.fontFamilyMonospace,
   },
   typeDetails: {
     display: "grid",
@@ -423,46 +395,6 @@ function isValidQuartzKey(value: string) {
   return /^[a-z0-9][a-z0-9._-]*$/.test(value);
 }
 
-function getJobDataError(value: string) {
-  if (!value.trim()) return undefined;
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-      return "Informe um objeto JSON com pares de chave e valor";
-    }
-  } catch {
-    return "Corrija o JSON antes de criar a rotina";
-  }
-
-  return undefined;
-}
-
-function parseJobData(value: string): JobDataEntry[] {
-  if (!value.trim()) return [];
-  const parsed = JSON.parse(value) as Record<string, unknown>;
-
-  return Object.entries(parsed).map(([key, entryValue]) => {
-    const type: JobDataEntry["type"] =
-      typeof entryValue === "boolean"
-        ? "Boolean"
-        : typeof entryValue === "number" && Number.isInteger(entryValue)
-          ? "Integer"
-          : typeof entryValue === "string"
-            ? "String"
-            : "JSON";
-
-    return {
-      key,
-      type,
-      value:
-        typeof entryValue === "string"
-          ? entryValue
-          : JSON.stringify(entryValue),
-    };
-  });
-}
-
 export function ScheduledJobCreatePage() {
   const styles = useStyles();
   const navigate = useNavigate();
@@ -549,7 +481,7 @@ export function ScheduledJobCreatePage() {
     (!Number.isInteger(priorityNumber) || draft.priority.trim() === "")
       ? "Informe uma prioridade inteira"
       : undefined;
-  const jobDataError = getJobDataError(draft.jobData);
+  const httpRequestErrors = validateHttpRequestDraft(draft.httpRequest);
   const triggerLabel = draft.createTrigger
     ? `${draft.triggerType} · ${draft.timeZone}`
     : "Sem trigger inicial";
@@ -560,7 +492,6 @@ export function ScheduledJobCreatePage() {
         ? "Sem concorrência"
         : "Permite concorrência",
     );
-    if (selectedJobType.persistJobData) behavior.push("Persiste JobDataMap");
     if (selectedJobType.interruptable) behavior.push("Aceita interrupção");
     return behavior.join(" · ");
   }, [selectedJobType]);
@@ -579,7 +510,7 @@ export function ScheduledJobCreatePage() {
       groupError ||
       expressionError ||
       priorityError ||
-      jobDataError
+      httpRequestErrors.length > 0
     ) {
       return;
     }
@@ -590,7 +521,8 @@ export function ScheduledJobCreatePage() {
       group: normalizedGroup,
       description:
         draft.description.trim() || "Rotina criada no portal administrativo.",
-      jobClass: selectedJobType.jobClass,
+      type: selectedJobType.type,
+      httpRequest: toHttpRequestConfiguration(draft.httpRequest),
       durable: draft.durable,
       requestsRecovery: draft.requestsRecovery,
       disallowConcurrent: selectedJobType.disallowConcurrent,
@@ -622,7 +554,6 @@ export function ScheduledJobCreatePage() {
         duration: "—",
         message: "Nenhuma execução registrada.",
       },
-      jobData: parseJobData(draft.jobData),
     };
 
     setIsSubmitting(true);
@@ -657,15 +588,15 @@ export function ScheduledJobCreatePage() {
           <h1 className={styles.title}>Criar rotina</h1>
         </div>
         <p className={styles.lead}>
-          Defina o JobDetail e, se necessário, o primeiro Trigger. As informações
-          estão separadas conforme os objetos que a API enviará ao Quartz.
+          Defina a requisição HTTP e, se necessário, o primeiro Trigger. O mesmo
+          executor atende APIs internas e externas sem uma nova implementação Java.
         </p>
       </header>
 
       <MessageBar intent="info">
         <MessageBarBody>
-          A rotina e seu trigger inicial serão persistidos pela API em uma única
-          operação.
+          Tokens e senhas devem usar referências no formato env:NOME_DA_VARIAVEL.
+          O valor do segredo não será salvo na definição da rotina.
         </MessageBarBody>
       </MessageBar>
 
@@ -682,7 +613,7 @@ export function ScheduledJobCreatePage() {
             groupError ||
             expressionError ||
             priorityError ||
-            jobDataError) ? (
+            httpRequestErrors.length > 0) ? (
             <MessageBar intent="error" role="alert">
               <MessageBarBody>
                 Revise os campos indicados antes de criar a rotina.
@@ -769,8 +700,8 @@ export function ScheduledJobCreatePage() {
                   Tipo de job
                 </h2>
                 <p className={styles.sectionDescription}>
-                  Selecione uma implementação publicada e autorizada no catálogo
-                  da API.
+                  Selecione o executor autorizado pela API. Não é necessário
+                  informar uma classe Java.
                 </p>
               </div>
             </div>
@@ -797,9 +728,9 @@ export function ScheduledJobCreatePage() {
               </Text>
               <dl className={styles.detailsList}>
                 <div className={styles.detailItem}>
-                  <dt className={styles.detailTerm}>Classe Java</dt>
+                  <dt className={styles.detailTerm}>Executor</dt>
                   <dd className={styles.detailValue}>
-                    <code className={styles.code}>{selectedJobType.jobClass}</code>
+                    <code className={styles.code}>{selectedJobType.type}</code>
                   </dd>
                 </div>
                 <div className={styles.detailItem}>
@@ -825,11 +756,11 @@ export function ScheduledJobCreatePage() {
               </span>
               <div className={styles.sectionCopy}>
                 <h2 id="job-detail-title" className={styles.sectionTitle}>
-                  Comportamento e dados
+                  Requisição HTTP e comportamento
                 </h2>
                 <p className={styles.sectionDescription}>
-                  Configure a permanência do JobDetail, a recuperação de falhas e
-                  os dados entregues ao handler.
+                  Configure o destino, parâmetros, autenticação, conteúdo e os
+                  limites operacionais da chamada.
                 </p>
               </div>
             </div>
@@ -867,18 +798,15 @@ export function ScheduledJobCreatePage() {
               </div>
             </fieldset>
 
-            <Field
-              label="JobDataMap"
-              hint="Informe um objeto JSON. Segredos devem ser referenciados por identificador, nunca gravados em texto puro"
-              validationState={showErrors && jobDataError ? "error" : "none"}
-              validationMessage={showErrors ? jobDataError : undefined}
-            >
-              <Textarea
-                className={styles.codeTextarea}
-                value={draft.jobData}
-                onChange={(_, data) => updateDraft({ jobData: data.value })}
-              />
-            </Field>
+            <HttpRequestEditor
+              draft={draft.httpRequest}
+              showErrors={showErrors}
+              onChange={(update) =>
+                updateDraft({
+                  httpRequest: { ...draft.httpRequest, ...update },
+                })
+              }
+            />
           </section>
 
           <section className={styles.section} aria-labelledby="schedule-title">
@@ -1065,6 +993,12 @@ export function ScheduledJobCreatePage() {
             <div className={styles.summaryItem}>
               <dt className={styles.summaryTerm}>Agendamento</dt>
               <dd className={styles.summaryValue}>{triggerLabel}</dd>
+            </div>
+            <div className={styles.summaryItem}>
+              <dt className={styles.summaryTerm}>Destino HTTP</dt>
+              <dd className={styles.summaryValue}>
+                {draft.httpRequest.method} {draft.httpRequest.url || "URL ainda não informada"}
+              </dd>
             </div>
           </dl>
           <div className={styles.confirmation}>

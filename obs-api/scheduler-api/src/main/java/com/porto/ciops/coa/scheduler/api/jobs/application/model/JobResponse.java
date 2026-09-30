@@ -7,7 +7,8 @@ public record JobResponse(
 		String name,
 		String group,
 		String description,
-		String jobClass,
+		String type,
+		HttpRequestConfiguration httpRequest,
 		boolean durable,
 		boolean requestsRecovery,
 		boolean disallowConcurrent,
@@ -15,6 +16,5 @@ public record JobResponse(
 		boolean interruptable,
 		List<TriggerResponse> triggers,
 		ActiveExecutionResponse activeExecution,
-		ExecutionSummaryResponse lastExecution,
-		List<JobDataEntryResponse> jobData) {
+		ExecutionSummaryResponse lastExecution) {
 }

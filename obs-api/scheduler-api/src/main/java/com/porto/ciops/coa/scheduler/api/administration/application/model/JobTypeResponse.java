@@ -4,7 +4,7 @@ public record JobTypeResponse(
 		String id,
 		String name,
 		String description,
-		String jobClass,
+		String type,
 		boolean disallowConcurrent,
 		boolean persistJobData,
 		boolean interruptable) {

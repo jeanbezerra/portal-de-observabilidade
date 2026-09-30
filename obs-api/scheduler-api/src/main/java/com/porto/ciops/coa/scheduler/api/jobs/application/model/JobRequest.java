@@ -11,12 +11,9 @@ public record JobRequest(
 		@NotBlank @Size(max = 200) @Pattern(regexp = "[a-z0-9][a-z0-9._-]*") String name,
 		@NotBlank @Size(max = 200) @Pattern(regexp = "[a-z0-9][a-z0-9._-]*") String group,
 		@NotNull @Size(max = 500) String description,
-		@NotBlank @Size(max = 500) String jobClass,
+		@NotBlank @Pattern(regexp = "HTTP_REQUEST") String type,
+		@NotNull @Valid HttpRequestConfiguration httpRequest,
 		boolean durable,
 		boolean requestsRecovery,
-		boolean disallowConcurrent,
-		boolean persistJobData,
-		boolean interruptable,
-		@NotNull List<@Valid JobDataEntryRequest> jobData,
 		@NotNull List<@Valid TriggerRequest> triggers) {
 }
