@@ -4,6 +4,7 @@ export type JobGroup = {
   name: string;
   description: string;
   active: boolean;
+  routineCount?: number;
   createdAt: string;
   updatedAt: string;
 };

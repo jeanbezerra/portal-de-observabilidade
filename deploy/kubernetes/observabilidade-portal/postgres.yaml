@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: observabilidade-portal-postgres
+  labels:
+    app.kubernetes.io/name: scheduler-postgres
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /var/lib/observabilidade-portal/postgres
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - kubernetes-wsl
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scheduler-postgres-data
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: scheduler-postgres
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: manual
+  volumeName: observabilidade-portal-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-postgres
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: scheduler-postgres
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: scheduler-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scheduler-postgres
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: scheduler-postgres
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  serviceName: scheduler-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scheduler-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduler-postgres
+        app.kubernetes.io/part-of: observabilidade-portal
+    spec:
+      securityContext:
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-data-directory
+          image: busybox:1.37
+          command: ["sh", "-c", "chown -R 70:70 /var/lib/postgresql/data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: scheduler
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsUser: 70
+            runAsGroup: 70
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: scheduler-postgres-data

@@ -1,0 +1,22 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: observabilidade-portal
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  parentRefs:
+    - name: wsl-gateway
+      namespace: gateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      backendRefs:
+        - name: scheduler-api
+          port: 8081
+    - backendRefs:
+        - name: obs-web
+          port: 3000

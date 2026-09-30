@@ -16,7 +16,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { DeleteRegular } from "@fluentui/react-icons";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 
 import {
   getPrimaryTrigger,
@@ -76,6 +76,42 @@ export type ScheduleDraft = {
   priority: number;
 };
 
+const triggerExpressionDefaults: Record<TriggerType, string> = {
+  CronTrigger: "0 0 8 ? * MON-FRI",
+  SimpleTrigger: "INTERVAL 5 MINUTES · REPEAT FOREVER",
+  CalendarIntervalTrigger: "1 DAY",
+  DailyTimeIntervalTrigger:
+    "MON-FRI · 08:00-18:00 · INTERVAL 30 MINUTES",
+};
+
+const misfireOptions: Record<TriggerType, string[]> = {
+  CronTrigger: [
+    "SMART_POLICY",
+    "DO_NOTHING",
+    "FIRE_ONCE_NOW",
+    "IGNORE_MISFIRE_POLICY",
+  ],
+  SimpleTrigger: [
+    "SMART_POLICY",
+    "FIRE_NOW",
+    "RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT",
+    "RESCHEDULE_NEXT_WITH_REMAINING_COUNT",
+    "IGNORE_MISFIRE_POLICY",
+  ],
+  CalendarIntervalTrigger: [
+    "SMART_POLICY",
+    "DO_NOTHING",
+    "FIRE_ONCE_NOW",
+    "IGNORE_MISFIRE_POLICY",
+  ],
+  DailyTimeIntervalTrigger: [
+    "SMART_POLICY",
+    "DO_NOTHING",
+    "FIRE_ONCE_NOW",
+    "IGNORE_MISFIRE_POLICY",
+  ],
+};
+
 export function ScheduleEditorDialog({
   job,
   onClose,
@@ -83,10 +119,16 @@ export function ScheduleEditorDialog({
 }: {
   job?: ScheduledJob;
   onClose: () => void;
-  onSave: (job: ScheduledJob, draft: ScheduleDraft) => void;
+  onSave: (
+    job: ScheduledJob,
+    draft: ScheduleDraft,
+  ) => Promise<string | undefined>;
 }) {
   const styles = useStyles();
+  const formId = useId();
   const trigger = job ? getPrimaryTrigger(job) : undefined;
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [draft, setDraft] = useState<ScheduleDraft>({
     triggerType: "CronTrigger",
     expression: "",
@@ -111,23 +153,34 @@ export function ScheduleEditorDialog({
   if (!job || !trigger) return null;
   const selectedJob = job;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSave(selectedJob, draft);
+    setSaveError("");
+    setIsSaving(true);
+    const error = await onSave(selectedJob, draft);
+    if (error) {
+      setSaveError(error);
+      setIsSaving(false);
+    }
   }
 
   return (
     <Dialog
       open
       onOpenChange={(_, data) => {
-        if (!data.open) onClose();
+        if (!data.open && !isSaving) onClose();
       }}
     >
       <DialogSurface className={styles.compactSurface}>
         <DialogBody>
           <DialogTitle>Editar agendamento</DialogTitle>
           <DialogContent>
-            <form className={styles.form} onSubmit={handleSubmit}>
+            <form id={formId} className={styles.form} onSubmit={handleSubmit}>
+              {saveError ? (
+                <MessageBar intent="error" role="alert">
+                  <MessageBarBody>{saveError}</MessageBarBody>
+                </MessageBar>
+              ) : null}
               <MessageBar intent="warning">
                 <MessageBarBody>
                   Ao salvar, a API usará rescheduleJob para substituir o trigger
@@ -139,12 +192,15 @@ export function ScheduleEditorDialog({
                 <Field label="Tipo de trigger" required>
                   <Select
                     value={draft.triggerType}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const triggerType = event.target.value as TriggerType;
                       setDraft((current) => ({
                         ...current,
-                        triggerType: event.target.value as TriggerType,
-                      }))
-                    }
+                        triggerType,
+                        expression: triggerExpressionDefaults[triggerType],
+                        misfireInstruction: "SMART_POLICY",
+                      }));
+                    }}
                   >
                     {triggerTypes.map((type) => (
                       <option key={type} value={type}>
@@ -230,23 +286,27 @@ export function ScheduleEditorDialog({
                       }))
                     }
                   >
-                    <option value="SMART_POLICY">SMART_POLICY</option>
-                    <option value="DO_NOTHING">DO_NOTHING</option>
-                    <option value="FIRE_ONCE_NOW">FIRE_ONCE_NOW</option>
+                    {misfireOptions[draft.triggerType].map((instruction) => (
+                      <option key={instruction} value={instruction}>
+                        {instruction}
+                      </option>
+                    ))}
                   </Select>
                 </Field>
               </div>
             </form>
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={onClose}>
+            <Button appearance="secondary" onClick={onClose} disabled={isSaving}>
               Cancelar
             </Button>
             <Button
               appearance="primary"
-              onClick={() => onSave(selectedJob, draft)}
+              type="submit"
+              form={formId}
+              disabled={isSaving}
             >
-              Salvar agendamento
+              {isSaving ? "Salvando..." : "Salvar agendamento"}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -262,23 +322,47 @@ export function DeleteScheduledJobDialog({
 }: {
   job?: ScheduledJob;
   onClose: () => void;
-  onDelete: (job: ScheduledJob) => void;
+  onDelete: (job: ScheduledJob) => Promise<string | undefined>;
 }) {
   const styles = useStyles();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  useEffect(() => {
+    setIsDeleting(false);
+    setDeleteError("");
+  }, [job?.id]);
+
   if (!job) return null;
+  const selectedJob = job;
+
+  async function handleDelete() {
+    setDeleteError("");
+    setIsDeleting(true);
+    const error = await onDelete(selectedJob);
+    if (error) {
+      setDeleteError(error);
+      setIsDeleting(false);
+    }
+  }
 
   return (
     <Dialog
       open
       modalType="alert"
       onOpenChange={(_, data) => {
-        if (!data.open) onClose();
+        if (!data.open && !isDeleting) onClose();
       }}
     >
       <DialogSurface className={styles.compactSurface}>
         <DialogBody>
           <DialogTitle>Excluir esta rotina?</DialogTitle>
           <DialogContent className={styles.deleteContent}>
+            {deleteError ? (
+              <MessageBar intent="error" role="alert">
+                <MessageBarBody>{deleteError}</MessageBarBody>
+              </MessageBar>
+            ) : null}
             <Text>
               A API chamará deleteJob para remover o JobDetail
               <Text className={styles.key}> {job.id}</Text> e todos os triggers
@@ -291,15 +375,16 @@ export function DeleteScheduledJobDialog({
             </MessageBar>
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={onClose}>
+            <Button appearance="secondary" onClick={onClose} disabled={isDeleting}>
               Cancelar
             </Button>
             <Button
               className={styles.deleteButton}
               icon={<DeleteRegular />}
-              onClick={() => onDelete(job)}
+              onClick={handleDelete}
+              disabled={isDeleting}
             >
-              Excluir rotina
+              {isDeleting ? "Excluindo..." : "Excluir rotina"}
             </Button>
           </DialogActions>
         </DialogBody>

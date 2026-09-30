@@ -14,6 +14,7 @@ import {
   MessageBar,
   MessageBarBody,
   Select,
+  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -56,15 +57,21 @@ import {
 } from "./scheduled-job-editor-dialogs";
 import { ScheduledJobDetailsDialog } from "./scheduled-job-details-dialog";
 import {
-  cloneScheduledJob,
   getJobTriggerState,
   getPrimaryTrigger,
-  scheduledJobs as initialScheduledJobs,
   triggerTypes,
   type ScheduledJob,
   type TriggerState,
   type TriggerType,
 } from "./scheduled-jobs-model";
+import {
+  getSchedulerApiError,
+  listScheduledJobs,
+  removeScheduledJob,
+  runBulkJobAction,
+  runJobAction,
+  updateScheduledJobTrigger,
+} from "./scheduler-api-client";
 import {
   ExecutionResultBadge,
   getExecutionResultLabel,
@@ -620,16 +627,8 @@ export function ScheduledJobsPage() {
   const styles = useStyles();
   const location = useLocation();
   const navigate = useNavigate();
-  const [jobs, setJobs] = useState<ScheduledJob[]>(() =>
-    initialScheduledJobs.map((job) => ({
-      ...job,
-      triggers: job.triggers.map((trigger) => ({ ...trigger })),
-      jobData: job.jobData.map((entry) => ({ ...entry })),
-      activeExecution: job.activeExecution
-        ? { ...job.activeExecution }
-        : undefined,
-    })),
-  );
+  const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState<string>(allGroups);
   const [stateFilter, setStateFilter] = useState<StateFilter>(allStates);
@@ -649,6 +648,40 @@ export function ScheduledJobsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(15);
 
+  async function refreshJobs(showNotice = false) {
+    setIsLoading(true);
+    try {
+      setJobs(await listScheduledJobs());
+      setLastUpdated(
+        new Intl.DateTimeFormat("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(new Date()),
+      );
+      if (showNotice) {
+        setNotice({
+          intent: "info",
+          message: "Rotinas, agendamentos e execuções ativas foram atualizados.",
+        });
+      }
+    } catch (error) {
+      setNotice({
+        intent: "error",
+        message: getSchedulerApiError(
+          error,
+          "Não foi possível carregar as rotinas agendadas.",
+        ),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshJobs();
+  }, []);
+
   useEffect(() => {
     const createdJob = (
       location.state as { createdJob?: ScheduledJob } | null
@@ -662,7 +695,7 @@ export function ScheduledJobsPage() {
     );
     setNotice({
       intent: "success",
-      message: `Rotina “${createdJob.name}” criada no mockup. Na integração, a API ${createdJob.triggers.length > 0 ? "salvará a rotina e seu agendamento em uma única operação" : "salvará a rotina como sob demanda"}.`,
+      message: `Rotina “${createdJob.name}” criada${createdJob.triggers.length > 0 ? " com seu agendamento inicial" : " como rotina sob demanda"}.`,
     });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate]);
@@ -768,6 +801,12 @@ export function ScheduledJobsPage() {
     );
   }
 
+  function replaceJob(updatedJob: ScheduledJob) {
+    setJobs((current) =>
+      current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
+    );
+  }
+
   function toggleJobSelection(jobId: string) {
     setSelectedJobIds((current) => {
       const next = new Set(current);
@@ -805,7 +844,7 @@ export function ScheduledJobsPage() {
     return sort?.column === column ? sort.direction : undefined;
   }
 
-  function handlePauseSelected() {
+  async function handlePauseSelected() {
     const pausableIds = new Set(
       selectedVisibleJobs
         .filter(
@@ -815,105 +854,106 @@ export function ScheduledJobsPage() {
         .map((job) => job.id),
     );
 
-    setJobs((current) =>
-      current.map((job) =>
-        pausableIds.has(job.id)
-          ? {
-              ...job,
-              triggers: job.triggers.map((trigger) => ({
-                ...trigger,
-                state: "PAUSED",
-                nextFireTime: "Pausado",
-              })),
-            }
-          : job,
-      ),
-    );
-    const pausedMessage =
-      pausableIds.size === 1
-        ? "1 rotina teve os novos disparos pausados."
-        : `${pausableIds.size} rotinas tiveram os novos disparos pausados.`;
-    setNotice({
-      intent: "warning",
-      message: `${pausedMessage} A API pausará os próximos disparos de cada rotina; execuções já iniciadas continuarão normalmente.`,
-    });
+    try {
+      const result = await runBulkJobAction(
+        selectedVisibleJobs.filter((job) => pausableIds.has(job.id)),
+        "pause",
+      );
+      await refreshJobs();
+      const pausedMessage =
+        result.succeeded === 1
+          ? "1 rotina teve os novos disparos pausados."
+          : `${result.succeeded} rotinas tiveram os novos disparos pausados.`;
+      const skippedMessage = result.skipped.length
+        ? ` ${result.skipped.length} não puderam ser alteradas.`
+        : "";
+      setNotice({
+        intent: result.skipped.length > 0 ? "warning" : "success",
+        message: `${pausedMessage}${skippedMessage} Execuções já iniciadas continuam normalmente.`,
+      });
+    } catch (error) {
+      setNotice({
+        intent: "error",
+        message: getSchedulerApiError(
+          error,
+          "Não foi possível pausar as rotinas selecionadas.",
+        ),
+      });
+    }
   }
 
-  function handleTriggerSelected() {
+  async function handleTriggerSelected() {
     const executableIds = new Set(
       selectedVisibleJobs
         .filter((job) => !(job.disallowConcurrent && job.activeExecution))
         .map((job) => job.id),
     );
-    const requestedAt = Date.now();
-
-    setJobs((current) =>
-      current.map((job, index) =>
-        executableIds.has(job.id)
-          ? {
-              ...job,
-              activeExecution: {
-                state: "RUNNING",
-                fireInstanceId: `manual-lote-${requestedAt}-${index}`,
-                schedulerInstance: "Aguardando aquisição",
-                podName: "Aguardando aquisição por uma instância",
-                scheduledFireTime: "Disparo manual em lote",
-                actualFireTime: "agora",
-                elapsed: "menos de 1 s",
-                refireCount: 0,
-                recovering: false,
-              },
-            }
-          : job,
-      ),
-    );
-
-    const skippedCount = selectedVisibleJobs.length - executableIds.size;
-    const requestedMessage =
-      executableIds.size === 1
-        ? "Disparo imediato solicitado para 1 rotina."
-        : `Disparo imediato solicitado para ${executableIds.size} rotinas.`;
-    const skippedMessage =
-      skippedCount === 1
-        ? "1 rotina em execução e sem concorrência foi ignorada."
-        : `${skippedCount} rotinas em execução e sem concorrência foram ignoradas.`;
-    setNotice({
-      intent: skippedCount > 0 ? "warning" : "success",
-      message: `${requestedMessage} ${skippedCount > 0 ? skippedMessage : "A API acompanhará cada nova execução."}`,
-    });
+    try {
+      const result = await runBulkJobAction(
+        selectedVisibleJobs.filter((job) => executableIds.has(job.id)),
+        "trigger",
+      );
+      await refreshJobs();
+      const skippedCount = selectedVisibleJobs.length - result.succeeded;
+      const requestedMessage =
+        result.succeeded === 1
+          ? "Disparo imediato solicitado para 1 rotina."
+          : `Disparo imediato solicitado para ${result.succeeded} rotinas.`;
+      const skippedMessage =
+        skippedCount === 1
+          ? "1 rotina não pôde ser disparada."
+          : `${skippedCount} rotinas não puderam ser disparadas.`;
+      setNotice({
+        intent: skippedCount > 0 ? "warning" : "success",
+        message: `${requestedMessage} ${skippedCount > 0 ? skippedMessage : "As execuções foram encaminhadas ao Quartz."}`,
+      });
+    } catch (error) {
+      setNotice({
+        intent: "error",
+        message: getSchedulerApiError(
+          error,
+          "Não foi possível disparar as rotinas selecionadas.",
+        ),
+      });
+    }
   }
 
-  function handleInterruptSelected() {
+  async function handleInterruptSelected() {
     const interruptibleIds = new Set(
       selectedVisibleJobs
         .filter((job) => job.activeExecution && job.interruptable)
         .map((job) => job.id),
     );
 
-    setJobs((current) =>
-      current.map((job) =>
-        interruptibleIds.has(job.id) && job.activeExecution
-          ? {
-              ...job,
-              activeExecution: {
-                ...job.activeExecution,
-                state: "INTERRUPTION_REQUESTED",
-              },
-            }
-          : job,
-      ),
-    );
-    const interruptionMessage =
-      interruptibleIds.size === 1
-        ? "Interrupção solicitada para 1 execução."
-        : `Interrupção solicitada para ${interruptibleIds.size} execuções.`;
-    setNotice({
-      intent: "warning",
-      message: `${interruptionMessage} A API encaminhará o comando ao nó responsável; a conclusão depende de cada rotina aceitar a interrupção.`,
-    });
+    try {
+      const result = await runBulkJobAction(
+        selectedVisibleJobs.filter((job) => interruptibleIds.has(job.id)),
+        "interrupt",
+      );
+      await refreshJobs();
+      const interruptionMessage =
+        result.succeeded === 1
+          ? "Interrupção solicitada para 1 execução."
+          : `Interrupção solicitada para ${result.succeeded} execuções.`;
+      const skippedMessage = result.skipped.length
+        ? ` ${result.skipped.length} não puderam ser interrompidas.`
+        : "";
+      setNotice({
+        intent: result.skipped.length > 0 ? "warning" : "success",
+        message: `${interruptionMessage}${skippedMessage} A conclusão depende de cada rotina aceitar a interrupção.`,
+      });
+    } catch (error) {
+      setNotice({
+        intent: "error",
+        message: getSchedulerApiError(
+          error,
+          "Não foi possível interromper as execuções selecionadas.",
+        ),
+      });
+    }
   }
 
-  function handleTriggerNow(job: ScheduledJob) {
+  async function handleTriggerNow(job: ScheduledJob) {
     if (job.disallowConcurrent && job.activeExecution) {
       setNotice({
         intent: "warning",
@@ -922,118 +962,95 @@ export function ScheduledJobsPage() {
       return;
     }
 
-    updateJob(job.id, (current) => ({
-      ...current,
-      activeExecution: {
-        state: "RUNNING",
-        fireInstanceId: `manual-${Date.now()}`,
-        schedulerInstance: "Aguardando aquisição",
-        podName: "Aguardando aquisição por uma instância",
-        scheduledFireTime: "Disparo manual",
-        actualFireTime: "agora",
-        elapsed: "menos de 1 s",
-        refireCount: 0,
-        recovering: false,
-      },
-    }));
-    setNotice({
-      intent: "success",
-      message: `Disparo imediato solicitado para “${job.name}”. A API enviará o comando e acompanhará a nova execução.`,
-    });
+    try {
+      replaceJob(await runJobAction(job, "trigger"));
+      setNotice({ intent: "success", message: `Disparo imediato solicitado para “${job.name}”.` });
+    } catch (error) {
+      setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível disparar “${job.name}”.`) });
+    }
   }
 
-  function handlePause(job: ScheduledJob) {
-    updateJob(job.id, (current) => ({
-      ...current,
-      triggers: current.triggers.map((trigger) => ({
-        ...trigger,
-        state: "PAUSED",
-        nextFireTime: "Pausado",
-      })),
-    }));
-    setNotice({
-      intent: "warning",
-      message: `Novos disparos de “${job.name}” foram pausados. Execuções já iniciadas continuam normalmente.`,
-    });
+  async function handlePause(job: ScheduledJob) {
+    try {
+      replaceJob(await runJobAction(job, "pause"));
+      setNotice({ intent: "success", message: `Novos disparos de “${job.name}” foram pausados. Execuções já iniciadas continuam normalmente.` });
+    } catch (error) {
+      setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível pausar “${job.name}”.`) });
+    }
   }
 
-  function handleResume(job: ScheduledJob) {
-    updateJob(job.id, (current) => ({
-      ...current,
-      triggers: current.triggers.map((trigger) => ({
-        ...trigger,
-        state: "NORMAL",
-        nextFireTime: "Recalculado pela API",
-      })),
-    }));
-    setNotice({
-      intent: "success",
-      message: `Os disparos de “${job.name}” foram retomados. A próxima execução será recalculada automaticamente.`,
-    });
+  async function handleResume(job: ScheduledJob) {
+    try {
+      replaceJob(await runJobAction(job, "resume"));
+      setNotice({ intent: "success", message: `Os disparos de “${job.name}” foram retomados.` });
+    } catch (error) {
+      setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível retomar “${job.name}”.`) });
+    }
   }
 
-  function handleInterrupt(job: ScheduledJob) {
+  async function handleInterrupt(job: ScheduledJob) {
     if (!job.activeExecution || !job.interruptable) return;
-
-    updateJob(job.id, (current) => ({
-      ...current,
-      activeExecution: current.activeExecution
-        ? { ...current.activeExecution, state: "INTERRUPTION_REQUESTED" }
-        : undefined,
-    }));
-    setNotice({
-      intent: "warning",
-      message: `Interrupção solicitada para “${job.name}”. A API encaminhará o comando ao nó responsável; o término depende de a rotina aceitar a interrupção.`,
-    });
+    try {
+      replaceJob(await runJobAction(job, "interrupt"));
+      setNotice({ intent: "success", message: `Interrupção solicitada para “${job.name}”.` });
+    } catch (error) {
+      setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível interromper “${job.name}”.`) });
+    }
   }
 
-  function handleDuplicate(job: ScheduledJob) {
-    const duplicatedJob = cloneScheduledJob(job);
-    setJobs((current) => [...current, duplicatedJob]);
-    setNotice({
-      intent: "success",
-      message: `Cópia “${duplicatedJob.name}” criada e mantida pausada para revisão.`,
-    });
+  async function handleDuplicate(job: ScheduledJob) {
+    try {
+      const duplicatedJob = await runJobAction(job, "duplicate");
+      setJobs((current) => [...current, duplicatedJob]);
+      setNotice({ intent: "success", message: `Cópia “${duplicatedJob.name}” criada e mantida pausada para revisão.` });
+    } catch (error) {
+      setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível duplicar “${job.name}”.`) });
+    }
   }
 
-  function handleSaveSchedule(job: ScheduledJob, draft: ScheduleDraft) {
-    updateJob(job.id, (current) => ({
-      ...current,
-      triggers: current.triggers.map((trigger, index) =>
-        index === 0
-          ? {
-              ...trigger,
-              type: draft.triggerType,
-              expression: draft.expression,
-              schedule: `Agendamento atualizado: ${draft.expression}`,
-              timeZone: draft.timeZone,
-              calendar: draft.calendar,
-              misfireInstruction: draft.misfireInstruction,
-              priority: draft.priority,
-              nextFireTime: "Recalculado pela API",
-            }
-          : trigger,
-      ),
-    }));
-    setJobToEdit(undefined);
-    setNotice({
-      intent: "success",
-      message: `Agendamento de “${job.name}” atualizado. A API substituirá somente a configuração deste agendamento.`,
-    });
+  async function handleSaveSchedule(job: ScheduledJob, draft: ScheduleDraft) {
+    const currentTrigger = getPrimaryTrigger(job);
+    if (!currentTrigger) return "A rotina não possui um trigger editável.";
+    try {
+      const updatedTrigger = await updateScheduledJobTrigger(job, {
+        ...currentTrigger,
+        type: draft.triggerType,
+        expression: draft.expression,
+        timeZone: draft.timeZone,
+        calendar: draft.calendar,
+        misfireInstruction: draft.misfireInstruction,
+        priority: draft.priority,
+      });
+      updateJob(job.id, (current) => ({ ...current, triggers: current.triggers.map((trigger, index) => index === 0 ? updatedTrigger : trigger) }));
+      setJobToEdit(undefined);
+      setNotice({ intent: "success", message: `Agendamento de “${job.name}” atualizado.` });
+      return undefined;
+    } catch (error) {
+      const message = getSchedulerApiError(
+        error,
+        `Não foi possível atualizar o agendamento de “${job.name}”.`,
+      );
+      setNotice({ intent: "error", message });
+      return message;
+    }
   }
 
-  function handleDelete(job: ScheduledJob) {
-    setJobs((current) => current.filter((item) => item.id !== job.id));
-    setSelectedJobIds((current) => {
-      const next = new Set(current);
-      next.delete(job.id);
-      return next;
-    });
-    setJobToDelete(undefined);
-    setNotice({
-      intent: "success",
-      message: `Rotina “${job.name}” removida do mockup com seus agendamentos associados.`,
-    });
+  async function handleDelete(job: ScheduledJob) {
+    try {
+      await removeScheduledJob(job);
+      setJobs((current) => current.filter((item) => item.id !== job.id));
+      setSelectedJobIds((current) => { const next = new Set(current); next.delete(job.id); return next; });
+      setJobToDelete(undefined);
+      setNotice({ intent: "success", message: `Rotina “${job.name}” removida com seus agendamentos associados.` });
+      return undefined;
+    } catch (error) {
+      const message = getSchedulerApiError(
+        error,
+        `Não foi possível excluir “${job.name}”.`,
+      );
+      setNotice({ intent: "error", message });
+      return message;
+    }
   }
 
   function clearFilters() {
@@ -1045,18 +1062,7 @@ export function ScheduledJobsPage() {
   }
 
   function handleRefresh() {
-    setLastUpdated(
-      new Intl.DateTimeFormat("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }).format(new Date()),
-    );
-    setNotice({
-      intent: "info",
-      message:
-        "Dados atualizados. Na integração, a API consultará rotinas, agendamentos e execuções ativas em todos os nós do serviço.",
-    });
+    void refreshJobs(true);
   }
 
   return (
@@ -1084,6 +1090,7 @@ export function ScheduledJobsPage() {
             size="large"
             icon={<ArrowClockwiseRegular />}
             onClick={handleRefresh}
+            disabled={isLoading}
           >
             Atualizar dados
           </Button>
@@ -1100,9 +1107,16 @@ export function ScheduledJobsPage() {
       </header>
 
       {notice ? (
-        <MessageBar intent={notice.intent} role="status">
+        <MessageBar
+          intent={notice.intent}
+          role={notice.intent === "error" ? "alert" : "status"}
+        >
           <MessageBarBody>{notice.message}</MessageBarBody>
         </MessageBar>
+      ) : null}
+
+      {isLoading ? (
+        <Spinner label="Carregando rotinas agendadas" />
       ) : null}
 
       <section className={styles.summaryGrid} aria-label="Resumo das rotinas">

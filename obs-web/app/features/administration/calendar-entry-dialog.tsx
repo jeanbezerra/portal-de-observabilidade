@@ -81,7 +81,7 @@ const useStyles = makeStyles({
 type CalendarEntryDialogProps = {
   entry?: CalendarEntry;
   entries: CalendarEntry[];
-  onSave: (entry: CalendarEntry) => string | undefined;
+  onSave: (entry: CalendarEntry) => Promise<string | undefined>;
 };
 
 function toDraft(entry?: CalendarEntry): CalendarEntryDraft {
@@ -108,6 +108,7 @@ export function CalendarEntryDialog({
   const [draft, setDraft] = useState<CalendarEntryDraft>(() => toDraft(entry));
   const [showErrors, setShowErrors] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const errors = showErrors
     ? validateCalendarEntry(draft, entries, entry?.id)
     : {};
@@ -122,11 +123,12 @@ export function CalendarEntryDialog({
       setDraft(toDraft(entry));
       setShowErrors(false);
       setStorageError("");
+      setIsSubmitting(false);
     }
     setOpen(nextOpen);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowErrors(true);
     setStorageError("");
@@ -136,7 +138,8 @@ export function CalendarEntryDialog({
 
     const normalizedDraft = normalizeCalendarEntryDraft(draft);
     const now = new Date().toISOString();
-    const saveError = onSave({
+    setIsSubmitting(true);
+    const saveError = await onSave({
       ...normalizedDraft,
       id: entry?.id ?? createCalendarEntryId(),
       createdAt: entry?.createdAt ?? now,
@@ -145,6 +148,7 @@ export function CalendarEntryDialog({
 
     if (saveError) {
       setStorageError(saveError);
+      setIsSubmitting(false);
       return;
     }
 
@@ -305,8 +309,17 @@ export function CalendarEntryDialog({
                 Cancelar
               </Button>
             </DialogTrigger>
-            <Button type="submit" form={formId} appearance="primary">
-              {entry ? "Salvar alterações" : "Adicionar data"}
+            <Button
+              type="submit"
+              form={formId}
+              appearance="primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting
+                ? "Salvando..."
+                : entry
+                  ? "Salvar alterações"
+                  : "Adicionar data"}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -317,7 +330,7 @@ export function CalendarEntryDialog({
 
 type DeleteCalendarEntryDialogProps = {
   entry: CalendarEntry;
-  onDelete: (entry: CalendarEntry) => string | undefined;
+  onDelete: (entry: CalendarEntry) => Promise<string | undefined>;
 };
 
 export function DeleteCalendarEntryDialog({
@@ -327,11 +340,14 @@ export function DeleteCalendarEntryDialog({
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  function handleDelete() {
-    const deleteError = onDelete(entry);
+  async function handleDelete() {
+    setIsDeleting(true);
+    const deleteError = await onDelete(entry);
     if (deleteError) {
       setStorageError(deleteError);
+      setIsDeleting(false);
       return;
     }
     setOpen(false);
@@ -343,6 +359,7 @@ export function DeleteCalendarEntryDialog({
       open={open}
       onOpenChange={(_, data) => {
         setStorageError("");
+        setIsDeleting(false);
         setOpen(data.open);
       }}
     >
@@ -374,8 +391,9 @@ export function DeleteCalendarEntryDialog({
               appearance="primary"
               icon={<DeleteRegular />}
               onClick={handleDelete}
+              disabled={isDeleting}
             >
-              Excluir data
+              {isDeleting ? "Excluindo..." : "Excluir data"}
             </Button>
           </DialogActions>
         </DialogBody>

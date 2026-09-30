@@ -41,6 +41,7 @@ import {
   loadTimeZoneEntries,
   saveTimeZoneEntry,
 } from "../features/administration/time-zone-storage";
+import { getSchedulerApiError } from "../features/administration/scheduler-api-client";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -250,12 +251,32 @@ export default function AdministrationTimeZones() {
   }>();
 
   useEffect(() => {
-    setEntries(loadTimeZoneEntries());
-    setIsLoading(false);
+    let active = true;
+    void loadTimeZoneEntries()
+      .then((loadedEntries) => {
+        if (active) setEntries(loadedEntries);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setNotice({
+            intent: "error",
+            message: getSchedulerApiError(
+              error,
+              "Não foi possível carregar os fusos horários.",
+            ),
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
     setNow(new Date());
 
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const visibleEntries = useMemo(() => {
@@ -278,10 +299,10 @@ export default function AdministrationTimeZones() {
   const filtersAreActive =
     statusFilter !== allStatuses || search.trim().length > 0;
 
-  function handleSave(entry: TimeZoneEntry) {
+  async function handleSave(entry: TimeZoneEntry) {
     try {
       const isEditing = entries.some((item) => item.id === entry.id);
-      setEntries(saveTimeZoneEntry(entry));
+      setEntries(await saveTimeZoneEntry(entry, isEditing));
       setSearch("");
       setStatusFilter(allStatuses);
       setNotice({
@@ -291,22 +312,28 @@ export default function AdministrationTimeZones() {
         } aos fusos horários.`,
       });
       return undefined;
-    } catch {
-      return "Não foi possível salvar o fuso horário neste navegador. Tente novamente.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível salvar o fuso horário. Tente novamente.",
+      );
     }
   }
 
-  function handleDelete(entry: TimeZoneEntry) {
+  async function handleDelete(entry: TimeZoneEntry) {
     try {
-      setEntries(deleteTimeZoneEntry(entry.id));
+      setEntries(await deleteTimeZoneEntry(entry.id));
       setNotice({
         intent: "success",
         message: `“${entry.label}” foi excluído dos fusos horários.`,
       });
       requestAnimationFrame(() => sectionTitleRef.current?.focus());
       return undefined;
-    } catch {
-      return "Não foi possível excluir o fuso horário. Verifique se ele ainda é o padrão.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível excluir o fuso horário. Verifique se ele ainda é o padrão.",
+      );
     }
   }
 

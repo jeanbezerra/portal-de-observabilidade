@@ -40,7 +40,7 @@ import {
   loadJobGroups,
   saveJobGroup,
 } from "../features/administration/job-group-storage";
-import { scheduledJobs } from "../features/administration/scheduled-jobs-model";
+import { getSchedulerApiError } from "../features/administration/scheduler-api-client";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -218,17 +218,37 @@ export default function AdministrationJobGroups() {
   }>();
 
   useEffect(() => {
-    setGroups(loadJobGroups());
-    setIsLoading(false);
+    let active = true;
+    void loadJobGroups()
+      .then((loadedGroups) => {
+        if (active) setGroups(loadedGroups);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setNotice({
+            intent: "error",
+            message: getSchedulerApiError(
+              error,
+              "Não foi possível carregar os grupos de rotinas.",
+            ),
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const routineCountByGroup = useMemo(() => {
     const counts = new Map<string, number>();
-    scheduledJobs.forEach((job) => {
-      counts.set(job.group, (counts.get(job.group) ?? 0) + 1);
+    groups.forEach((group) => {
+      counts.set(group.key, group.routineCount ?? 0);
     });
     return counts;
-  }, []);
+  }, [groups]);
 
   const visibleGroups = useMemo(() => {
     const normalizedSearch = normalizeSearch(search);
@@ -252,36 +272,42 @@ export default function AdministrationJobGroups() {
   const filtersAreActive =
     search.trim().length > 0 || statusFilter !== allStatuses;
 
-  function handleSave(group: JobGroup) {
+  async function handleSave(group: JobGroup) {
     const isEditing = groups.some((item) => item.id === group.id);
     try {
-      setGroups(saveJobGroup(group));
+      setGroups(await saveJobGroup(group, isEditing));
       setNotice({
         intent: "success",
         message: `“${group.name}” foi ${isEditing ? "atualizado" : "adicionado"}.`,
       });
       return undefined;
-    } catch {
-      return "Não foi possível salvar o grupo neste navegador. Tente novamente.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível salvar o grupo. Tente novamente.",
+      );
     }
   }
 
-  function handleDelete(group: JobGroup) {
+  async function handleDelete(group: JobGroup) {
     const routineCount = routineCountByGroup.get(group.key) ?? 0;
     if (routineCount > 0) {
       return "Remova ou transfira as rotinas vinculadas antes de excluir o grupo.";
     }
 
     try {
-      setGroups(deleteJobGroup(group.id));
+      setGroups(await deleteJobGroup(group.id));
       setNotice({
         intent: "success",
         message: `“${group.name}” foi excluído.`,
       });
       requestAnimationFrame(() => sectionTitleRef.current?.focus());
       return undefined;
-    } catch {
-      return "Não foi possível excluir o grupo neste navegador. Tente novamente.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível excluir o grupo. Tente novamente.",
+      );
     }
   }
 

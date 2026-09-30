@@ -44,6 +44,7 @@ import {
   loadCalendarEntries,
   saveCalendarEntry,
 } from "../features/administration/calendar-storage";
+import { getSchedulerApiError } from "../features/administration/scheduler-api-client";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -258,8 +259,28 @@ export default function AdministrationCalendar() {
   }>();
 
   useEffect(() => {
-    setEntries(loadCalendarEntries());
-    setIsLoading(false);
+    let active = true;
+    void loadCalendarEntries()
+      .then((loadedEntries) => {
+        if (active) setEntries(loadedEntries);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setNotice({
+            intent: "error",
+            message: getSchedulerApiError(
+              error,
+              "Não foi possível carregar o calendário.",
+            ),
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const years = useMemo(() => {
@@ -307,37 +328,42 @@ export default function AdministrationCalendar() {
   ).length;
   const filtersAreActive = typeFilter !== allTypes || search.trim().length > 0;
 
-  function handleSave(entry: CalendarEntry) {
+  async function handleSave(entry: CalendarEntry) {
     try {
-      setEntries(saveCalendarEntry(entry));
+      const isEditing = entries.some((item) => item.id === entry.id);
+      setEntries(await saveCalendarEntry(entry, isEditing));
       setSelectedYear(getCalendarEntryYear(entry.date));
       setTypeFilter(allTypes);
       setSearch("");
       setNotice({
         intent: "success",
         message: `“${entry.name}” foi ${
-          entries.some((item) => item.id === entry.id)
-            ? "atualizada"
-            : "adicionada"
+          isEditing ? "atualizada" : "adicionada"
         } ao calendário.`,
       });
       return undefined;
-    } catch {
-      return "Não foi possível salvar a data neste navegador. Tente novamente.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível salvar a data. Tente novamente.",
+      );
     }
   }
 
-  function handleDelete(entry: CalendarEntry) {
+  async function handleDelete(entry: CalendarEntry) {
     try {
-      setEntries(deleteCalendarEntry(entry.id));
+      setEntries(await deleteCalendarEntry(entry.id));
       setNotice({
         intent: "success",
         message: `“${entry.name}” foi excluída do calendário.`,
       });
       requestAnimationFrame(() => sectionTitleRef.current?.focus());
       return undefined;
-    } catch {
-      return "Não foi possível excluir a data neste navegador. Tente novamente.";
+    } catch (error) {
+      return getSchedulerApiError(
+        error,
+        "Não foi possível excluir a data. Tente novamente.",
+      );
     }
   }
 

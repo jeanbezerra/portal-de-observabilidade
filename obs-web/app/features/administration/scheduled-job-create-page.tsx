@@ -25,26 +25,22 @@ import {
 } from "./job-group-model";
 import { loadJobGroups } from "./job-group-storage";
 import {
-  scheduledJobs,
   triggerTypes,
   type JobDataEntry,
   type ScheduledJob,
   type TriggerType,
 } from "./scheduled-jobs-model";
+import {
+  createScheduledJob,
+  getSchedulerApiError,
+  listJobTypes,
+  listScheduledJobs,
+  type JobTypeOption,
+} from "./scheduler-api-client";
 
 const jobsRoute = "/administracao/agendamentos/rotinas-agendadas";
 
-type JobTypeOption = {
-  id: string;
-  name: string;
-  description: string;
-  jobClass: string;
-  disallowConcurrent: boolean;
-  persistJobData: boolean;
-  interruptable: boolean;
-};
-
-const jobTypeOptions: JobTypeOption[] = [
+const fallbackJobTypeOptions: JobTypeOption[] = [
   {
     id: "calendar-sync",
     name: "Sincronização de calendários",
@@ -123,9 +119,19 @@ const misfireOptions: Record<TriggerType, { value: string; label: string }[]> = 
 
 const triggerHints: Record<TriggerType, string> = {
   CronTrigger: "Use uma expressão cron do Quartz, por exemplo 0 0 8 ? * MON-FRI",
-  SimpleTrigger: "Informe o intervalo e a repetição aceitos pela API",
-  CalendarIntervalTrigger: "Informe a unidade e o intervalo de calendário",
-  DailyTimeIntervalTrigger: "Informe a janela diária e o intervalo entre disparos",
+  SimpleTrigger:
+    "Use, por exemplo, INTERVAL 5 MINUTES · REPEAT FOREVER",
+  CalendarIntervalTrigger: "Use, por exemplo, 1 DAY ou 2 WEEKS",
+  DailyTimeIntervalTrigger:
+    "Use, por exemplo, MON-FRI · 08:00-18:00 · INTERVAL 30 MINUTES",
+};
+
+const triggerExpressionDefaults: Record<TriggerType, string> = {
+  CronTrigger: "0 0 8 ? * MON-FRI",
+  SimpleTrigger: "INTERVAL 5 MINUTES · REPEAT FOREVER",
+  CalendarIntervalTrigger: "1 DAY",
+  DailyTimeIntervalTrigger:
+    "MON-FRI · 08:00-18:00 · INTERVAL 30 MINUTES",
 };
 
 type CreateJobDraft = {
@@ -464,28 +470,59 @@ export function ScheduledJobCreatePage() {
   const [availableGroups, setAvailableGroups] = useState<JobGroup[]>(() =>
     defaultJobGroups.filter((group) => group.active),
   );
+  const [availableJobTypes, setAvailableJobTypes] = useState<JobTypeOption[]>(
+    fallbackJobTypeOptions,
+  );
+  const [existingJobs, setExistingJobs] = useState<ScheduledJob[]>([]);
   const [showErrors, setShowErrors] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const activeGroups = loadJobGroups().filter((group) => group.active);
-    setAvailableGroups(activeGroups);
-    setDraft((current) =>
-      activeGroups.some((group) => group.key === current.group)
-        ? current
-        : { ...current, group: activeGroups[0]?.key ?? "" },
-    );
+    let active = true;
+    void Promise.all([loadJobGroups(), listJobTypes(), listScheduledJobs()])
+      .then(([groups, jobTypes, jobs]) => {
+        if (!active) return;
+        const activeGroups = groups.filter((group) => group.active);
+        setAvailableGroups(activeGroups);
+        setAvailableJobTypes(jobTypes);
+        setExistingJobs(jobs);
+        setDraft((current) => ({
+          ...current,
+          group: activeGroups.some((group) => group.key === current.group)
+            ? current.group
+            : (activeGroups[0]?.key ?? ""),
+          jobTypeId: jobTypes.some((type) => type.id === current.jobTypeId)
+            ? current.jobTypeId
+            : (jobTypes[0]?.id ?? ""),
+        }));
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setSubmitError(
+            getSchedulerApiError(
+              error,
+              "Não foi possível carregar os dados necessários para criar a rotina.",
+            ),
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const selectedJobType =
-    jobTypeOptions.find((option) => option.id === draft.jobTypeId) ??
-    jobTypeOptions[0];
+    availableJobTypes.find((option) => option.id === draft.jobTypeId) ??
+    availableJobTypes[0] ??
+    fallbackJobTypeOptions[0];
   const normalizedName = draft.name.trim().toLocaleLowerCase("pt-BR");
   const normalizedGroup = draft.group.trim().toLocaleLowerCase("pt-BR");
   const jobKey =
     normalizedName && normalizedGroup
       ? `${normalizedGroup}.${normalizedName}`
       : "Definida após informar nome e grupo";
-  const duplicate = scheduledJobs.some(
+  const duplicate = existingJobs.some(
     (job) => job.name === normalizedName && job.group === normalizedGroup,
   );
   const nameError = !draft.name.trim()
@@ -532,9 +569,10 @@ export function ScheduledJobCreatePage() {
     setDraft((current) => ({ ...current, ...update }));
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowErrors(true);
+    setSubmitError("");
 
     if (
       nameError ||
@@ -587,7 +625,19 @@ export function ScheduledJobCreatePage() {
       jobData: parseJobData(draft.jobData),
     };
 
-    navigate(jobsRoute, { state: { createdJob: job } });
+    setIsSubmitting(true);
+    try {
+      const createdJob = await createScheduledJob(job);
+      navigate(jobsRoute, { state: { createdJob } });
+    } catch (error) {
+      setSubmitError(
+        getSchedulerApiError(
+          error,
+          "Não foi possível criar a rotina. Revise os dados e tente novamente.",
+        ),
+      );
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -614,9 +664,16 @@ export function ScheduledJobCreatePage() {
 
       <MessageBar intent="info">
         <MessageBarBody>
-          Mockup interativo: a rotina criada não será persistida na API.
+          A rotina e seu trigger inicial serão persistidos pela API em uma única
+          operação.
         </MessageBarBody>
       </MessageBar>
+
+      {submitError ? (
+        <MessageBar intent="error" role="alert">
+          <MessageBarBody>{submitError}</MessageBarBody>
+        </MessageBar>
+      ) : null}
 
       <div className={styles.layout}>
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
@@ -725,7 +782,7 @@ export function ScheduledJobCreatePage() {
                   updateDraft({ jobTypeId: event.target.value })
                 }
               >
-                {jobTypeOptions.map((option) => (
+                  {availableJobTypes.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.name}
                   </option>
@@ -863,12 +920,14 @@ export function ScheduledJobCreatePage() {
                 <Field label="Tipo de trigger" required>
                   <Select
                     value={draft.triggerType}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const triggerType = event.target.value as TriggerType;
                       updateDraft({
-                        triggerType: event.target.value as TriggerType,
+                        triggerType,
+                        expression: triggerExpressionDefaults[triggerType],
                         misfireInstruction: "SMART_POLICY",
-                      })
-                    }
+                      });
+                    }}
                   >
                     {triggerTypes.map((type) => (
                       <option key={type} value={type}>
@@ -977,8 +1036,9 @@ export function ScheduledJobCreatePage() {
               size="large"
               type="submit"
               icon={<AddRegular />}
+              disabled={isSubmitting}
             >
-              Criar rotina
+              {isSubmitting ? "Criando rotina..." : "Criar rotina"}
             </Button>
           </div>
         </form>
@@ -1013,7 +1073,7 @@ export function ScheduledJobCreatePage() {
               aria-hidden="true"
             />
             <Text size={200}>
-              Ao confirmar, a API deverá persistir o JobDetail e o Trigger de
+              Ao confirmar, a API persistirá o JobDetail e o Trigger de
               forma atômica quando houver agendamento inicial.
             </Text>
           </div>

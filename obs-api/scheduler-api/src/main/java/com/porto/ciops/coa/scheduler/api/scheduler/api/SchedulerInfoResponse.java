@@ -1,5 +1,6 @@
-package com.porto.ciops.coa.scheduler.api.scheduler;
+package com.porto.ciops.coa.scheduler.api.scheduler.api;
 
+import com.porto.ciops.coa.scheduler.api.scheduler.application.SchedulerInfo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 
@@ -21,4 +22,10 @@ public record SchedulerInfoResponse(
 		int jobsExecuted,
 		@Schema(description = "Instante em que a instância foi iniciada")
 		Instant runningSince) {
+
+	static SchedulerInfoResponse from(SchedulerInfo info) {
+		return new SchedulerInfoResponse(
+				info.schedulerName(), info.instanceId(), info.version(), info.state(), info.clustered(),
+				info.threadPoolSize(), info.jobsExecuted(), info.runningSince());
+	}
 }

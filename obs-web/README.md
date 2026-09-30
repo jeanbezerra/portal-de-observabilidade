@@ -13,6 +13,14 @@ npm run dev
 
 O ambiente de desenvolvimento fica disponível em `http://localhost:5173`.
 
+O módulo de agendamentos usa `http://localhost:8081` como endereço padrão da
+Scheduler API. Para apontar para outro ambiente, defina antes de iniciar ou
+compilar:
+
+```shell
+VITE_SCHEDULER_API_URL=https://scheduler-api.exemplo.interno
+```
+
 ## Validar e executar o build
 
 ```shell
@@ -49,9 +57,10 @@ Administração.
 - A identificação registra solicitante e gestor, vertical de negócio, produto, squad opcional, categoria Porto SDM, tipo de solicitação, nome e estágio do sistema e, em adições, o orçamento anterior aprovado.
 - Ao concluir os dados do solicitante, o portal prepara um identificador `ORC-...`, confirmado no envio, e gera a taxonomia de rastreabilidade para OneAgent, Kubernetes, serverless e OpenTelemetry.
 - O envio congela o manifesto de tags, baixa o comprovante em PDF e mantém o registro no `localStorage` do navegador.
-- O calendário corporativo permite cadastrar, editar, filtrar e excluir datas; no protótipo, os registros ficam no `localStorage` do navegador.
-- O cadastro de fusos horários mantém um identificador IANA ativo como padrão e também usa o `localStorage` nesta etapa.
-- A gestão de rotinas agendadas oferece um mockup interativo dos comandos do Quartz; os dados e alterações permanecem somente na memória da página até a integração com a API.
+- O calendário corporativo permite cadastrar, editar, filtrar e excluir datas persistidas pela Scheduler API.
+- O cadastro de fusos horários mantém um identificador IANA ativo como padrão na Scheduler API.
+- A gestão de rotinas agendadas cria JobDetails e triggers, consulta o estado do Quartz e executa comandos de pausa, retomada, disparo, interrupção, duplicação e exclusão pela API.
+- O histórico de execuções apresenta os eventos auditáveis capturados pela Scheduler API.
 - Revisão técnica, aprovação, autenticação e armazenamento corporativo ainda dependem de integração com backend e BPMN.
 - Datadog e StackOpen aparecem no catálogo como soluções futuras, sem fluxo de solicitação ativo.
 

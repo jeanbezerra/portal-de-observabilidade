@@ -114,7 +114,7 @@ function toDraft(entry: TimeZoneEntry | undefined, isFirstEntry: boolean) {
 type TimeZoneEntryDialogProps = {
   entry?: TimeZoneEntry;
   entries: TimeZoneEntry[];
-  onSave: (entry: TimeZoneEntry) => string | undefined;
+  onSave: (entry: TimeZoneEntry) => Promise<string | undefined>;
 };
 
 export function TimeZoneEntryDialog({
@@ -133,6 +133,7 @@ export function TimeZoneEntryDialog({
   );
   const [showErrors, setShowErrors] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const errors = showErrors
     ? validateTimeZoneDraft(draft, entries, entry?.id)
     : {};
@@ -147,11 +148,12 @@ export function TimeZoneEntryDialog({
       setDraft(toDraft(entry, isFirstEntry));
       setShowErrors(false);
       setStorageError("");
+      setIsSubmitting(false);
     }
     setOpen(nextOpen);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowErrors(true);
     setStorageError("");
@@ -161,7 +163,8 @@ export function TimeZoneEntryDialog({
 
     const normalizedDraft = normalizeTimeZoneDraft(draft);
     const now = new Date().toISOString();
-    const saveError = onSave({
+    setIsSubmitting(true);
+    const saveError = await onSave({
       ...normalizedDraft,
       id: entry?.id ?? createTimeZoneEntryId(),
       createdAt: entry?.createdAt ?? now,
@@ -170,6 +173,7 @@ export function TimeZoneEntryDialog({
 
     if (saveError) {
       setStorageError(saveError);
+      setIsSubmitting(false);
       return;
     }
 
@@ -318,8 +322,17 @@ export function TimeZoneEntryDialog({
                 Cancelar
               </Button>
             </DialogTrigger>
-            <Button type="submit" form={formId} appearance="primary">
-              {entry ? "Salvar alterações" : "Adicionar fuso"}
+            <Button
+              type="submit"
+              form={formId}
+              appearance="primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting
+                ? "Salvando..."
+                : entry
+                  ? "Salvar alterações"
+                  : "Adicionar fuso"}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -330,7 +343,7 @@ export function TimeZoneEntryDialog({
 
 type DeleteTimeZoneEntryDialogProps = {
   entry: TimeZoneEntry;
-  onDelete: (entry: TimeZoneEntry) => string | undefined;
+  onDelete: (entry: TimeZoneEntry) => Promise<string | undefined>;
 };
 
 export function DeleteTimeZoneEntryDialog({
@@ -340,11 +353,14 @@ export function DeleteTimeZoneEntryDialog({
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  function handleDelete() {
-    const deleteError = onDelete(entry);
+  async function handleDelete() {
+    setIsDeleting(true);
+    const deleteError = await onDelete(entry);
     if (deleteError) {
       setStorageError(deleteError);
+      setIsDeleting(false);
       return;
     }
     setOpen(false);
@@ -356,6 +372,7 @@ export function DeleteTimeZoneEntryDialog({
       open={open}
       onOpenChange={(_, data) => {
         setStorageError("");
+        setIsDeleting(false);
         setOpen(data.open);
       }}
     >
@@ -386,8 +403,9 @@ export function DeleteTimeZoneEntryDialog({
               appearance="primary"
               icon={<DeleteRegular />}
               onClick={handleDelete}
+              disabled={isDeleting}
             >
-              Excluir fuso
+              {isDeleting ? "Excluindo..." : "Excluir fuso"}
             </Button>
           </DialogActions>
         </DialogBody>

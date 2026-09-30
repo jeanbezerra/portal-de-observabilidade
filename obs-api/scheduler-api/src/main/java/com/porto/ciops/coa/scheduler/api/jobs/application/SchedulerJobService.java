@@ -1,0 +1,342 @@
+package com.porto.ciops.coa.scheduler.api.jobs.application;
+
+import com.porto.ciops.coa.scheduler.api.administration.application.AdministrationCatalogService;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobKeyRequest;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobDataEntryRequest;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerRequest;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerResponse;
+import com.porto.ciops.coa.scheduler.api.support.ApplicationProblemException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.quartz.InterruptableJob;
+import org.quartz.JobBuilder;
+import org.quartz.JobDataMap;
+import org.quartz.JobDetail;
+import org.quartz.JobKey;
+import org.quartz.ObjectAlreadyExistsException;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerKey;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class SchedulerJobService {
+
+	private final Scheduler scheduler;
+	private final JdbcTemplate jdbc;
+	private final AdministrationCatalogService catalogs;
+	private final SchedulerJobQueryService queries;
+	private final SchedulerTriggerFactory triggerFactory;
+	private final SchedulerJobClassResolver jobClasses;
+
+	public SchedulerJobService(Scheduler scheduler, JdbcTemplate jdbc, AdministrationCatalogService catalogs,
+			SchedulerJobQueryService queries, SchedulerTriggerFactory triggerFactory,
+			SchedulerJobClassResolver jobClasses) {
+		this.scheduler = scheduler;
+		this.jdbc = jdbc;
+		this.catalogs = catalogs;
+		this.queries = queries;
+		this.triggerFactory = triggerFactory;
+		this.jobClasses = jobClasses;
+	}
+
+	public List<JobResponse> listJobs() throws SchedulerException {
+		return queries.listJobs();
+	}
+
+	public JobResponse getJob(String group, String name) throws SchedulerException {
+		return queries.getJob(group, name);
+	}
+
+	@Transactional
+	public JobResponse createJob(JobRequest request) throws SchedulerException {
+		if (!catalogs.activeJobGroupExists(request.group())) {
+			throw ApplicationProblemException.conflict("Grupo indisponível",
+					"Selecione um grupo de rotinas ativo e cadastrado.");
+		}
+		if (request.triggers().isEmpty() && !request.durable()) {
+			throw ApplicationProblemException.invalidInput("Rotina não durável sem trigger",
+					"Uma rotina sem trigger inicial precisa ser durável.");
+		}
+
+		JobKey key = JobKey.jobKey(request.name(), request.group());
+		if (scheduler.checkExists(key)) {
+			throw ApplicationProblemException.conflict("Rotina duplicada",
+					"Já existe uma rotina com este nome e grupo.");
+		}
+		validateRequestCollections(request);
+
+		JobDataMap dataMap = new JobDataMap();
+		dataMap.put("_logicalJobClass", request.jobClass());
+		for (JobDataEntryRequest entry : request.jobData()) {
+			if (entry.key().startsWith("_")) {
+				throw ApplicationProblemException.invalidInput("Chave reservada",
+						"Chaves de JobDataMap iniciadas por sublinhado são reservadas pela API.");
+			}
+			dataMap.put(entry.key(), entry.value());
+		}
+
+		JobDetail detail = JobBuilder.newJob(jobClasses.resolve(request))
+				.withIdentity(key)
+				.withDescription(request.description())
+				.storeDurably(request.durable())
+				.requestRecovery(request.requestsRecovery())
+				.usingJobData(dataMap)
+				.build();
+		validateDeployedJobContract(detail, request);
+
+		Set<Trigger> triggers = new HashSet<>();
+		for (TriggerRequest triggerRequest : request.triggers()) {
+			if (scheduler.checkExists(TriggerKey.triggerKey(triggerRequest.key(), triggerRequest.group()))) {
+				throw ApplicationProblemException.conflict("Trigger duplicado",
+						"Já existe um trigger com a chave e o grupo informados.");
+			}
+			triggers.add(triggerFactory.build(key, triggerRequest));
+		}
+
+		boolean quartzCreated = false;
+		try {
+			if (triggers.isEmpty()) {
+				scheduler.addJob(detail, false);
+			}
+			else {
+				scheduler.scheduleJob(detail, triggers, false);
+			}
+			quartzCreated = true;
+			insertMetadata(request);
+		}
+		catch (ObjectAlreadyExistsException exception) {
+			throw ApplicationProblemException.conflict("Rotina ou trigger duplicado",
+					"Uma rotina ou um trigger com a mesma chave foi criado por outra solicitação.");
+		}
+		catch (RuntimeException | SchedulerException exception) {
+			if (quartzCreated) {
+				try {
+					scheduler.deleteJob(key);
+				}
+				catch (SchedulerException cleanupException) {
+					exception.addSuppressed(cleanupException);
+				}
+			}
+			throw exception;
+		}
+
+		return getJob(request.group(), request.name());
+	}
+
+	@Transactional
+	public TriggerResponse updateTrigger(String jobGroup, String jobName, String triggerGroup,
+			String triggerName, TriggerRequest request) throws SchedulerException {
+		JobKey jobKey = JobKey.jobKey(jobName, jobGroup);
+		if (!scheduler.checkExists(jobKey)) {
+			throw notFound(jobGroup, jobName);
+		}
+		TriggerKey oldKey = TriggerKey.triggerKey(triggerName, triggerGroup);
+		if (!scheduler.checkExists(oldKey)) {
+			throw ApplicationProblemException.notFound("Agendamento não encontrado",
+					"O trigger solicitado não existe.");
+		}
+		if (!triggerName.equals(request.key()) || !triggerGroup.equals(request.group())) {
+			throw ApplicationProblemException.invalidInput("Chave do trigger divergente",
+					"A chave e o grupo do trigger não podem ser alterados nesta operação.");
+		}
+
+		Trigger replacement = triggerFactory.build(jobKey, request);
+		if (scheduler.rescheduleJob(oldKey, replacement) == null) {
+			throw ApplicationProblemException.notFound("Agendamento não encontrado",
+					"O trigger deixou de existir antes da atualização.");
+		}
+		upsertTriggerMetadata(jobKey, request);
+		return queries.getTrigger(oldKey);
+	}
+
+	public JobResponse pauseJob(String group, String name) throws SchedulerException {
+		ensureJobExists(group, name);
+		scheduler.pauseJob(JobKey.jobKey(name, group));
+		return getJob(group, name);
+	}
+
+	public JobResponse resumeJob(String group, String name) throws SchedulerException {
+		ensureJobExists(group, name);
+		scheduler.resumeJob(JobKey.jobKey(name, group));
+		return getJob(group, name);
+	}
+
+	public JobResponse triggerJob(String group, String name) throws SchedulerException {
+		JobResponse job = getJob(group, name);
+		if (job.disallowConcurrent() && job.activeExecution() != null) {
+			throw ApplicationProblemException.conflict("Rotina em execução",
+					"A rotina já está em execução e não permite concorrência.");
+		}
+		scheduler.triggerJob(JobKey.jobKey(name, group));
+		return getJob(group, name);
+	}
+
+	@Transactional
+	public JobResponse interruptJob(String group, String name) throws SchedulerException {
+		JobResponse job = getJob(group, name);
+		if (!job.interruptable()) {
+			throw ApplicationProblemException.conflict("Rotina não interrompível",
+					"Esta rotina não aceita solicitação de interrupção.");
+		}
+		if (!scheduler.interrupt(JobKey.jobKey(name, group))) {
+			throw ApplicationProblemException.conflict("Execução não encontrada",
+					"Não há uma execução ativa desta rotina para interromper.");
+		}
+		jdbc.update("""
+				UPDATE public.scheduler_execution_history
+				SET interruption_requested = true, result = 'INTERRUPTION_REQUESTED', message = ?
+				WHERE job_group = ? AND job_name = ? AND finished_at IS NULL
+				""", "A interrupção foi solicitada ao nó responsável.", group, name);
+		return getJob(group, name);
+	}
+
+	@Transactional
+	public JobResponse duplicateJob(String group, String name) throws SchedulerException {
+		JobResponse source = getJob(group, name);
+		String suffix = Long.toString(System.currentTimeMillis(), 36);
+		String copyName = source.name() + "-copia-" + suffix.substring(Math.max(0, suffix.length() - 5));
+		List<TriggerRequest> triggers = source.triggers().stream()
+				.map(trigger -> new TriggerRequest(
+						trigger.key() + "-copia-" + suffix.substring(Math.max(0, suffix.length() - 5)),
+						trigger.group(), trigger.type(), trigger.expression(), trigger.timeZone(),
+						trigger.calendar(), trigger.priority(), trigger.misfireInstruction()))
+				.toList();
+		List<JobDataEntryRequest> data = queries.loadJobData(JobKey.jobKey(name, group), false).stream()
+				.map(entry -> new JobDataEntryRequest(entry.key(), entry.type(), entry.value(), entry.sensitive()))
+				.toList();
+		JobResponse copy = createJob(new JobRequest(
+				copyName, source.group(), "Cópia de " + source.name() + ". Revise o agendamento antes de ativar.",
+				source.jobClass(), source.durable(), source.requestsRecovery(), source.disallowConcurrent(),
+				source.persistJobData(), source.interruptable(), data, triggers));
+		scheduler.pauseJob(JobKey.jobKey(copy.name(), copy.group()));
+		return getJob(copy.group(), copy.name());
+	}
+
+	@Transactional
+	public void deleteJob(String group, String name) throws SchedulerException {
+		ensureJobExists(group, name);
+		if (!scheduler.deleteJob(JobKey.jobKey(name, group))) {
+			throw notFound(group, name);
+		}
+		jdbc.update("DELETE FROM public.scheduler_job_metadata WHERE job_group = ? AND job_name = ?", group, name);
+	}
+
+	public BulkJobActionResponse bulkAction(List<BulkJobKeyRequest> jobs, String action) {
+		if (!Set.of("pause", "trigger", "interrupt").contains(action)) {
+			throw ApplicationProblemException.invalidInput("Ação em lote inválida",
+					"Use pause, trigger ou interrupt.");
+		}
+		int succeeded = 0;
+		List<String> skipped = new ArrayList<>();
+		for (BulkJobKeyRequest job : jobs) {
+			String group = job.group();
+			String name = job.name();
+			String id = group + "." + name;
+			try {
+				switch (action) {
+					case "pause" -> pauseJob(group, name);
+					case "trigger" -> triggerJob(group, name);
+					case "interrupt" -> interruptJob(group, name);
+					default -> throw new IllegalStateException("Ação em lote não suportada: " + action);
+				}
+				succeeded++;
+			}
+			catch (RuntimeException | SchedulerException exception) {
+				skipped.add(id);
+			}
+		}
+		return new BulkJobActionResponse(jobs.size(), succeeded, skipped);
+	}
+
+	public List<ExecutionHistoryResponse> listExecutions(int limit) {
+		return queries.listExecutions(limit);
+	}
+
+	private void insertMetadata(JobRequest request) {
+		Instant now = Instant.now();
+		jdbc.update("""
+				INSERT INTO public.scheduler_job_metadata (
+				    job_name, job_group, description, logical_job_class, disallow_concurrent,
+				    persist_job_data, interruptable, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""", request.name(), request.group(), request.description(), request.jobClass(),
+				request.disallowConcurrent(), request.persistJobData(), request.interruptable(), timestamp(now), timestamp(now));
+		for (JobDataEntryRequest entry : request.jobData()) {
+			jdbc.update("""
+					INSERT INTO public.scheduler_job_data (
+					    job_name, job_group, data_key, data_type, data_value, sensitive
+					) VALUES (?, ?, ?, ?, ?, ?)
+					""", request.name(), request.group(), entry.key(), entry.type(), entry.value(), entry.sensitive());
+		}
+		for (TriggerRequest trigger : request.triggers()) {
+			upsertTriggerMetadata(JobKey.jobKey(request.name(), request.group()), trigger);
+		}
+	}
+
+	private void upsertTriggerMetadata(JobKey jobKey, TriggerRequest trigger) {
+		jdbc.update("DELETE FROM public.scheduler_trigger_metadata WHERE trigger_name = ? AND trigger_group = ?",
+				trigger.key(), trigger.group());
+		Instant now = Instant.now();
+		jdbc.update("""
+				INSERT INTO public.scheduler_trigger_metadata (
+				    trigger_name, trigger_group, job_name, job_group, trigger_type, expression,
+				    time_zone, calendar_name, misfire_instruction, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""", trigger.key(), trigger.group(), jobKey.getName(), jobKey.getGroup(), trigger.type(),
+				trigger.expression(), trigger.timeZone(), SchedulerTriggerFactory.normalizeCalendar(trigger.calendar()),
+				trigger.misfireInstruction(), timestamp(now), timestamp(now));
+	}
+
+	private void ensureJobExists(String group, String name) throws SchedulerException {
+		if (!scheduler.checkExists(JobKey.jobKey(name, group))) throw notFound(group, name);
+	}
+
+	private static void validateRequestCollections(JobRequest request) {
+		Set<String> jobDataKeys = new HashSet<>();
+		for (JobDataEntryRequest entry : request.jobData()) {
+			if (!jobDataKeys.add(entry.key())) {
+				throw ApplicationProblemException.invalidInput("JobDataMap duplicado",
+						"Cada chave do JobDataMap deve aparecer apenas uma vez.");
+			}
+		}
+
+		Set<TriggerKey> triggerKeys = new HashSet<>();
+		for (TriggerRequest trigger : request.triggers()) {
+			if (!triggerKeys.add(TriggerKey.triggerKey(trigger.key(), trigger.group()))) {
+				throw ApplicationProblemException.invalidInput("Trigger duplicado",
+						"Cada chave e grupo de trigger deve aparecer apenas uma vez.");
+			}
+		}
+	}
+
+	private void validateDeployedJobContract(JobDetail detail, JobRequest request) {
+		if (jobClasses.isManagedFallback(detail.getJobClass())) return;
+		if (detail.isConcurrentExecutionDisallowed() != request.disallowConcurrent()
+				|| detail.isPersistJobDataAfterExecution() != request.persistJobData()
+				|| (request.interruptable() && !InterruptableJob.class.isAssignableFrom(detail.getJobClass()))) {
+			throw ApplicationProblemException.conflict("Contrato do job divergente",
+					"A implementação publicada não corresponde às capacidades definidas no catálogo.");
+		}
+	}
+
+	private static ApplicationProblemException notFound(String group, String name) {
+		return ApplicationProblemException.notFound("Rotina não encontrada",
+				"A rotina " + group + "." + name + " não existe.");
+	}
+
+	private static Timestamp timestamp(Instant value) {
+		return value == null ? null : Timestamp.from(value);
+	}
+}

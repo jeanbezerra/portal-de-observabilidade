@@ -100,7 +100,7 @@ type JobGroupEntryDialogProps = {
   group?: JobGroup;
   groups: JobGroup[];
   routineCount?: number;
-  onSave: (group: JobGroup) => string | undefined;
+  onSave: (group: JobGroup) => Promise<string | undefined>;
 };
 
 export function JobGroupEntryDialog({
@@ -115,6 +115,7 @@ export function JobGroupEntryDialog({
   const [draft, setDraft] = useState<JobGroupDraft>(() => toDraft(group));
   const [showErrors, setShowErrors] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const errors = showErrors
     ? validateJobGroupDraft(draft, groups, group?.id)
     : {};
@@ -129,11 +130,12 @@ export function JobGroupEntryDialog({
       setDraft(toDraft(group));
       setShowErrors(false);
       setStorageError("");
+      setIsSubmitting(false);
     }
     setOpen(nextOpen);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowErrors(true);
     setStorageError("");
@@ -143,7 +145,8 @@ export function JobGroupEntryDialog({
 
     const normalizedDraft = normalizeJobGroupDraft(draft);
     const now = new Date().toISOString();
-    const saveError = onSave({
+    setIsSubmitting(true);
+    const saveError = await onSave({
       ...normalizedDraft,
       id: group?.id ?? createJobGroupId(),
       createdAt: group?.createdAt ?? now,
@@ -152,6 +155,7 @@ export function JobGroupEntryDialog({
 
     if (saveError) {
       setStorageError(saveError);
+      setIsSubmitting(false);
       return;
     }
 
@@ -267,8 +271,17 @@ export function JobGroupEntryDialog({
                 Cancelar
               </Button>
             </DialogTrigger>
-            <Button type="submit" form={formId} appearance="primary">
-              {group ? "Salvar alterações" : "Adicionar grupo"}
+            <Button
+              type="submit"
+              form={formId}
+              appearance="primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting
+                ? "Salvando..."
+                : group
+                  ? "Salvar alterações"
+                  : "Adicionar grupo"}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -279,7 +292,7 @@ export function JobGroupEntryDialog({
 
 type DeleteJobGroupDialogProps = {
   group: JobGroup;
-  onDelete: (group: JobGroup) => string | undefined;
+  onDelete: (group: JobGroup) => Promise<string | undefined>;
 };
 
 export function DeleteJobGroupDialog({
@@ -289,11 +302,14 @@ export function DeleteJobGroupDialog({
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  function handleDelete() {
-    const deleteError = onDelete(group);
+  async function handleDelete() {
+    setIsDeleting(true);
+    const deleteError = await onDelete(group);
     if (deleteError) {
       setStorageError(deleteError);
+      setIsDeleting(false);
       return;
     }
     setOpen(false);
@@ -305,6 +321,7 @@ export function DeleteJobGroupDialog({
       open={open}
       onOpenChange={(_, data) => {
         setStorageError("");
+        setIsDeleting(false);
         setOpen(data.open);
       }}
     >
@@ -336,8 +353,9 @@ export function DeleteJobGroupDialog({
               appearance="primary"
               icon={<DeleteRegular />}
               onClick={handleDelete}
+              disabled={isDeleting}
             >
-              Excluir grupo
+              {isDeleting ? "Excluindo..." : "Excluir grupo"}
             </Button>
           </DialogActions>
         </DialogBody>
