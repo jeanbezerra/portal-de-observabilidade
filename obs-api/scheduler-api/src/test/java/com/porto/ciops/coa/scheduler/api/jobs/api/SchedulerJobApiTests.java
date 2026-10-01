@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -112,6 +113,7 @@ class SchedulerJobApiTests {
 				.andExpect(jsonPath("$.type", is("HTTP_REQUEST")))
 				.andExpect(jsonPath("$.httpRequest.method", is("POST")))
 				.andExpect(jsonPath("$.httpRequest.headers[0].name", is("X-Origin")))
+				.andExpect(jsonPath("$.httpRequest.ignoreTlsValidation", is(false)))
 				.andExpect(jsonPath("$.triggers[0].type", is("CronTrigger")));
 
 		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-integration-test/pause"))
@@ -122,13 +124,32 @@ class SchedulerJobApiTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.triggers[0].state", is("NORMAL")));
 
+		String updatedConfiguration = httpConfiguration(
+				"http://127.0.0.1:" + targetServer.getAddress().getPort() + "/jobs")
+				.replace("\"method\": \"POST\"", "\"method\": \"PUT\"")
+				.replace("\"value\":\"integration\"", "\"value\":\"edited\"")
+				.replace("\"value\":\"portal\"", "\"value\":\"editor\"")
+				.replace("\\\"message\\\":\\\"teste\\\"", "\\\"message\\\":\\\"atualizado\\\"");
+		mockMvc.perform(put("/api/v1/jobs/plataforma/rotina-integration-test/configuration")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{
+							  "type": "HTTP_REQUEST",
+							  "httpRequest": %s
+							}
+							""".formatted(updatedConfiguration)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.httpRequest.method", is("PUT")))
+				.andExpect(jsonPath("$.httpRequest.queryParameters[0].value", is("edited")))
+				.andExpect(jsonPath("$.httpRequest.headers[0].value", is("editor")));
+
 		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-integration-test/trigger"))
 				.andExpect(status().isOk());
 		if (!requestReceived.await(5, TimeUnit.SECONDS)) {
 			throw new AssertionError("A API HTTP de teste não recebeu a execução do job.");
 		}
 		org.assertj.core.api.Assertions.assertThat(receivedRequest.get())
-				.contains("POST /jobs?origem=integration portal", "\"message\":\"teste\"");
+				.contains("PUT /jobs?origem=edited editor", "\"message\":\"atualizado\"");
 
 		mockMvc.perform(get("/api/v1/jobs/plataforma/rotina-integration-test"))
 				.andExpect(status().isOk())
@@ -166,6 +187,34 @@ class SchedulerJobApiTests {
 					.content(request))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.title", is("Referência de segredo inválida")));
+	}
+
+	@Test
+	void shouldPersistExplicitInsecureTlsConfiguration() throws Exception {
+		String configuration = httpConfiguration("https://internal.example.test/jobs")
+				.replace("\"redirectPolicy\": \"NEVER\"",
+						"\"ignoreTlsValidation\": true,\n  \"redirectPolicy\": \"NEVER\"");
+		String request = """
+				{
+				  "name": "rotina-tls-inseguro",
+				  "group": "plataforma",
+				  "description": "Valida a configuração explícita de TLS inseguro.",
+				  "type": "HTTP_REQUEST",
+				  "httpRequest": %s,
+				  "durable": true,
+				  "requestsRecovery": false,
+				  "triggers": []
+				}
+				""".formatted(configuration);
+
+		mockMvc.perform(post("/api/v1/jobs")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(request))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.httpRequest.ignoreTlsValidation", is(true)));
+
+		mockMvc.perform(delete("/api/v1/jobs/plataforma/rotina-tls-inseguro"))
+				.andExpect(status().isNoContent());
 	}
 
 	private static String httpConfiguration(String url) {

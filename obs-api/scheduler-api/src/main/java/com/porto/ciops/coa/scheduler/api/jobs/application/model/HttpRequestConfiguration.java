@@ -22,9 +22,14 @@ public record HttpRequestConfiguration(
 		@NotNull @Size(max = 200) String contentType,
 		@Min(1) @Max(120) int connectTimeoutSeconds,
 		@Min(1) @Max(3600) int requestTimeoutSeconds,
+		Boolean ignoreTlsValidation,
 		@NotBlank @Pattern(regexp = "NEVER|NORMAL") String redirectPolicy,
 		@NotBlank @Pattern(regexp = "HTTP_1_1|HTTP_2") String httpVersion,
 		@NotNull @Size(max = 100) List<@Min(100) @Max(599) Integer> expectedStatusCodes,
 		@Min(1024) @Max(5000000) int maxResponseBytes,
 		@NotNull @Valid HttpRetryPolicy retry) {
+
+	public HttpRequestConfiguration {
+		ignoreTlsValidation = Boolean.TRUE.equals(ignoreTlsValidation);
+	}
 }

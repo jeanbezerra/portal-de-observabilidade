@@ -6,12 +6,16 @@ import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestParam
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRetryPolicy;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Socket;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -19,6 +23,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509ExtendedTrustManager;
 import org.quartz.JobKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +39,36 @@ import tools.jackson.databind.ObjectMapper;
 public class HttpRequestJobExecutor {
 
 	private static final int OAUTH_RESPONSE_LIMIT = 1_000_000;
+	private static final X509ExtendedTrustManager TRUST_ALL_CERTIFICATES = new X509ExtendedTrustManager() {
+		@Override
+		public void checkClientTrusted(X509Certificate[] chain, String authType) {
+		}
+
+		@Override
+		public void checkServerTrusted(X509Certificate[] chain, String authType) {
+		}
+
+		@Override
+		public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) {
+		}
+
+		@Override
+		public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) {
+		}
+
+		@Override
+		public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
+		}
+
+		@Override
+		public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
+		}
+
+		@Override
+		public X509Certificate[] getAcceptedIssuers() {
+			return new X509Certificate[0];
+		}
+	};
 
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
@@ -77,6 +116,12 @@ public class HttpRequestJobExecutor {
 				throw exception;
 			}
 			catch (IOException exception) {
+				if (!configuration.ignoreTlsValidation() && exception instanceof SSLException) {
+					throw new IOException(
+							"Falha na conexão SSL/TLS. Verifique o certificado e o hostname do servidor. "
+									+ "Para destinos internos controlados, habilite a opção de ignorar a validação SSL/TLS.",
+							exception);
+				}
 				lastIoFailure = exception;
 				if (attempt == retry.maxAttempts()) break;
 				delay(delayMillis);
@@ -104,16 +149,28 @@ public class HttpRequestJobExecutor {
 		}
 	}
 
-	private HttpClient buildClient(HttpRequestConfiguration configuration) {
+	HttpClient buildClient(HttpRequestConfiguration configuration) {
 		if ("NORMAL".equals(configuration.redirectPolicy()) && !allowedHosts.contains("*")) {
 			throw new IllegalStateException(
 					"Redirecionamentos exigem HTTP_EXECUTOR_ALLOWED_HOSTS=* para evitar saída a hosts não autorizados.");
 		}
-		return HttpClient.newBuilder()
+		HttpClient.Builder builder = HttpClient.newBuilder()
 				.connectTimeout(Duration.ofSeconds(configuration.connectTimeoutSeconds()))
 				.followRedirects(HttpClient.Redirect.valueOf(configuration.redirectPolicy()))
-				.version(HttpClient.Version.valueOf(configuration.httpVersion()))
-				.build();
+				.version(HttpClient.Version.valueOf(configuration.httpVersion()));
+		if (configuration.ignoreTlsValidation()) builder.sslContext(insecureTlsContext());
+		return builder.build();
+	}
+
+	private static SSLContext insecureTlsContext() {
+		try {
+			SSLContext context = SSLContext.getInstance("TLS");
+			context.init(null, new TrustManager[] { TRUST_ALL_CERTIFICATES }, new SecureRandom());
+			return context;
+		}
+		catch (GeneralSecurityException exception) {
+			throw new IllegalStateException("Não foi possível configurar o modo SSL/TLS inseguro.", exception);
+		}
 	}
 
 	private HttpRequest buildRequest(HttpRequestConfiguration configuration, URI uri, String authorization) {

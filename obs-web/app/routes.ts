@@ -21,6 +21,10 @@ export default [
     "routes/administration-scheduled-job-create.tsx",
   ),
   route(
+    "administracao/agendamentos/rotinas-agendadas/:grupo/:nome",
+    "routes/administration-scheduled-job-detail.tsx",
+  ),
+  route(
     "administracao/agendamentos/:secao",
     "routes/administration-scheduling.tsx",
   ),

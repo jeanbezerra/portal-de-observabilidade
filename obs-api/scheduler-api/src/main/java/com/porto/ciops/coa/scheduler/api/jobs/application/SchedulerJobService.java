@@ -4,8 +4,10 @@ import com.porto.ciops.coa.scheduler.api.administration.application.Administrati
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobKeyRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobTypeConfigurationRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.infrastructure.quartz.HttpRequestJob;
@@ -156,6 +158,34 @@ public class SchedulerJobService {
 		return queries.getTrigger(oldKey);
 	}
 
+	@Transactional
+	public JobResponse updateJobTypeConfiguration(String group, String name,
+			JobTypeConfigurationRequest request) throws SchedulerException {
+		ensureJobExists(group, name);
+		JobResponse current = getJob(group, name);
+		if (!"HTTP_REQUEST".equals(current.type()) || current.httpRequest() == null) {
+			throw ApplicationProblemException.conflict("Tipo do job não editável",
+					"Somente rotinas HTTP_REQUEST podem ter sua configuração alterada por esta operação.");
+		}
+		if (!current.type().equals(request.type())) {
+			throw ApplicationProblemException.invalidInput("Tipo do job divergente",
+					"O tipo do job não pode ser alterado nesta operação.");
+		}
+		httpValidator.validate(request.httpRequest());
+
+		int updated = jdbc.update("""
+				UPDATE public.scheduler_job_metadata
+				SET execution_configuration = ?, updated_at = ?
+				WHERE job_group = ? AND job_name = ? AND job_type = ?
+				""", serializeConfiguration(request.httpRequest()), timestamp(Instant.now()),
+				group, name, request.type());
+		if (updated == 0) {
+			throw ApplicationProblemException.conflict("Metadados do job indisponíveis",
+					"A rotina existe no Quartz, mas não possui uma configuração editável cadastrada.");
+		}
+		return getJob(group, name);
+	}
+
 	public JobResponse pauseJob(String group, String name) throws SchedulerException {
 		ensureJobExists(group, name);
 		scheduler.pauseJob(JobKey.jobKey(name, group));
@@ -267,7 +297,7 @@ public class SchedulerJobService {
 				    disallow_concurrent, persist_job_data, interruptable, created_at, updated_at
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""", request.name(), request.group(), request.description(), HttpRequestJob.class.getName(),
-				request.type(), serializeConfiguration(request), true, false, true, timestamp(now), timestamp(now));
+				request.type(), serializeConfiguration(request.httpRequest()), true, false, true, timestamp(now), timestamp(now));
 		for (TriggerRequest trigger : request.triggers()) {
 			upsertTriggerMetadata(JobKey.jobKey(request.name(), request.group()), trigger);
 		}
@@ -301,9 +331,9 @@ public class SchedulerJobService {
 		}
 	}
 
-	private String serializeConfiguration(JobRequest request) {
+	private String serializeConfiguration(HttpRequestConfiguration configuration) {
 		try {
-			return objectMapper.writeValueAsString(request.httpRequest());
+			return objectMapper.writeValueAsString(configuration);
 		}
 		catch (Exception exception) {
 			throw new IllegalStateException("Não foi possível serializar a configuração HTTP.", exception);

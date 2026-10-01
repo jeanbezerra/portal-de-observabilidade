@@ -1,14 +1,28 @@
 import {
+  Button,
+  Checkbox,
   Field,
   Input,
   makeStyles,
   MessageBar,
   MessageBarBody,
   Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
   Text,
   Textarea,
   tokens,
 } from "@fluentui/react-components";
+import {
+  AddRegular,
+  DeleteRegular,
+  TextBulletListAddRegular,
+} from "@fluentui/react-icons";
+import { useId } from "react";
 
 import type {
   HttpAuthentication,
@@ -16,12 +30,19 @@ import type {
   HttpRequestParameter,
 } from "./scheduled-jobs-model";
 
+export type HttpRequestParameterDraft = {
+  id: string;
+  name: string;
+  value: string;
+  valueType: "VALUE" | "SECRET";
+};
+
 export type HttpRequestDraft = {
   method: HttpRequestConfiguration["method"];
   url: string;
-  queryParameters: string;
-  headers: string;
-  cookies: string;
+  queryParameters: HttpRequestParameterDraft[];
+  headers: HttpRequestParameterDraft[];
+  cookies: HttpRequestParameterDraft[];
   authenticationType: HttpAuthentication["type"];
   username: string;
   passwordSecretRef: string;
@@ -41,6 +62,7 @@ export type HttpRequestDraft = {
   contentType: string;
   connectTimeoutSeconds: string;
   requestTimeoutSeconds: string;
+  ignoreTlsValidation: boolean;
   redirectPolicy: HttpRequestConfiguration["redirectPolicy"];
   httpVersion: HttpRequestConfiguration["httpVersion"];
   expectedStatusCodes: string;
@@ -54,9 +76,16 @@ export type HttpRequestDraft = {
 export const initialHttpRequestDraft: HttpRequestDraft = {
   method: "POST",
   url: "",
-  queryParameters: "{}",
-  headers: '{\n  "Accept": "application/json"\n}',
-  cookies: "{}",
+  queryParameters: [],
+  headers: [
+    {
+      id: "default-accept-header",
+      name: "Accept",
+      value: "application/json",
+      valueType: "VALUE",
+    },
+  ],
+  cookies: [],
   authenticationType: "NONE",
   username: "",
   passwordSecretRef: "",
@@ -76,6 +105,7 @@ export const initialHttpRequestDraft: HttpRequestDraft = {
   contentType: "application/json",
   connectTimeoutSeconds: "10",
   requestTimeoutSeconds: "60",
+  ignoreTlsValidation: false,
   redirectPolicy: "NEVER",
   httpVersion: "HTTP_2",
   expectedStatusCodes: "",
@@ -120,6 +150,98 @@ const useStyles = makeStyles({
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
   },
+  parameterSections: {
+    display: "grid",
+    gap: tokens.spacingVerticalL,
+  },
+  parameterEditor: {
+    display: "grid",
+    gap: tokens.spacingVerticalS,
+  },
+  parameterHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: tokens.spacingHorizontalL,
+    flexWrap: "wrap",
+  },
+  parameterHeading: {
+    display: "grid",
+    gap: tokens.spacingVerticalXXS,
+    flexGrow: 1,
+    flexBasis: "280px",
+    minWidth: 0,
+  },
+  parameterActions: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: tokens.spacingHorizontalS,
+    flexWrap: "wrap",
+    marginLeft: "auto",
+    "@media (max-width: 760px)": {
+      width: "100%",
+    },
+  },
+  parameterTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase300,
+    lineHeight: tokens.lineHeightBase300,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  parameterHint: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
+  parameterTableFrame: {
+    minWidth: 0,
+    overflowX: "auto",
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  parameterTable: {
+    minWidth: "640px",
+  },
+  parameterNameCell: {
+    width: "30%",
+  },
+  parameterValueCell: {
+    width: "40%",
+  },
+  parameterTypeCell: {
+    width: "190px",
+  },
+  parameterActionCell: {
+    width: "48px",
+    textAlign: "center",
+  },
+  parameterInput: {
+    width: "100%",
+  },
+  emptyParameterCell: {
+    paddingTop: tokens.spacingVerticalL,
+    paddingBottom: tokens.spacingVerticalL,
+    color: tokens.colorNeutralForeground2,
+    textAlign: "center",
+  },
+  dangerAction: {
+    backgroundColor: tokens.colorStatusDangerBackground3,
+    color: tokens.colorNeutralForegroundStaticInverted,
+    ":hover": {
+      backgroundColor: tokens.colorStatusDangerBackground3Hover,
+      color: tokens.colorNeutralForegroundStaticInverted,
+    },
+    ":active": {
+      backgroundColor: tokens.colorStatusDangerBackground3Pressed,
+      color: tokens.colorNeutralForegroundStaticInverted,
+    },
+  },
+  parameterError: {
+    color: tokens.colorPaletteRedForeground1,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
   body: {
     minHeight: "180px",
     fontFamily: tokens.fontFamilyMonospace,
@@ -140,6 +262,20 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalL,
     paddingTop: tokens.spacingVerticalL,
   },
+  tlsOptions: {
+    display: "grid",
+    gap: tokens.spacingVerticalS,
+    margin: 0,
+    padding: tokens.spacingHorizontalL,
+    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
+  tlsDescription: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
   help: {
     color: tokens.colorNeutralForeground2,
   },
@@ -151,6 +287,91 @@ const useStyles = makeStyles({
 });
 
 const secretReferencePattern = /^env:[A-Za-z_][A-Za-z0-9_]*$/;
+type HttpRequestParameterPreset = Omit<HttpRequestParameterDraft, "id">;
+
+const standardHttpHeaders: readonly HttpRequestParameterPreset[] = [
+  {
+    name: "Accept",
+    value: "application/json",
+    valueType: "VALUE",
+  },
+  {
+    name: "Content-Type",
+    value: "application/json",
+    valueType: "VALUE",
+  },
+];
+
+let parameterRowSequence = 0;
+
+function createParameterRowId(prefix: string) {
+  parameterRowSequence += 1;
+  return `${prefix}-${parameterRowSequence}`;
+}
+
+function parameterListError(
+  parameters: HttpRequestParameterDraft[],
+  label: string,
+) {
+  for (const parameter of parameters) {
+    if (!parameter.name.trim() && !parameter.value.trim()) continue;
+    if (!parameter.name.trim()) {
+      return `${label}: informe o nome do parâmetro`;
+    }
+    if (
+      parameter.valueType === "SECRET" &&
+      !secretReferencePattern.test(parameter.value.trim())
+    ) {
+      return `${label}: a referência de segredo deve usar env:NOME_DA_VARIAVEL`;
+    }
+  }
+  return undefined;
+}
+
+function toHttpRequestParameters(
+  parameters: HttpRequestParameterDraft[],
+): HttpRequestParameter[] {
+  return parameters
+    .filter((parameter) => parameter.name.trim() || parameter.value.trim())
+    .map((parameter) => ({
+      name: parameter.name.trim(),
+      value: parameter.valueType === "VALUE" ? parameter.value : null,
+      secretRef:
+        parameter.valueType === "SECRET" ? parameter.value.trim() : null,
+    }));
+}
+
+function toParameterDrafts(
+  parameters: HttpRequestParameter[],
+  prefix: string,
+): HttpRequestParameterDraft[] {
+  return parameters.map((parameter) => ({
+    id: createParameterRowId(prefix),
+    name: parameter.name,
+    value: parameter.secretRef ?? parameter.value ?? "",
+    valueType: parameter.secretRef ? "SECRET" : "VALUE",
+  }));
+}
+
+function parametersToJson(parameters: HttpRequestParameter[]) {
+  type JsonParameterValue = string | { secretRef: string };
+  const values: Record<
+    string,
+    JsonParameterValue | JsonParameterValue[]
+  > = {};
+
+  for (const parameter of parameters) {
+    const value: JsonParameterValue = parameter.secretRef
+      ? { secretRef: parameter.secretRef }
+      : (parameter.value ?? "");
+    const current = values[parameter.name];
+    if (current === undefined) values[parameter.name] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else values[parameter.name] = [current, value];
+  }
+
+  return JSON.stringify(values, null, 2);
+}
 
 function parameterError(value: string, label: string) {
   try {
@@ -224,10 +445,16 @@ export function validateHttpRequestDraft(draft: HttpRequestDraft) {
     errors.push("Informe uma URL absoluta usando http ou https");
   }
 
-  for (const [value, label] of [
-    [draft.queryParameters, "Parâmetros de query"],
+  for (const [parameters, label] of [
+    [draft.queryParameters, "Query string"],
     [draft.headers, "Cabeçalhos"],
     [draft.cookies, "Cookies"],
+  ] as const) {
+    const error = parameterListError(parameters, label);
+    if (error) errors.push(error);
+  }
+
+  for (const [value, label] of [
     [draft.formParameters, "Campos do formulário"],
     [draft.tokenParameters, "Parâmetros adicionais do token"],
   ] as const) {
@@ -280,7 +507,7 @@ export function validateHttpRequestDraft(draft: HttpRequestDraft) {
     numberError(draft.maxResponseBytes, "Limite da resposta", 1024, 5_000_000),
     numberError(draft.maxAttempts, "Tentativas", 1, 5),
     numberError(draft.initialDelayMillis, "Espera inicial", 0, 60_000),
-    numberError(draft.backoffMultiplier, "Multiplicador do backoff", 1, 5),
+    numberError(draft.backoffMultiplier, "Fator de aumento da espera", 1, 5),
   ]) {
     if (error) errors.push(error);
   }
@@ -297,9 +524,9 @@ export function toHttpRequestConfiguration(draft: HttpRequestDraft): HttpRequest
   return {
     method: draft.method,
     url: draft.url.trim(),
-    queryParameters: parseParameters(draft.queryParameters, "Parâmetros de query"),
-    headers: parseParameters(draft.headers, "Cabeçalhos"),
-    cookies: parseParameters(draft.cookies, "Cookies"),
+    queryParameters: toHttpRequestParameters(draft.queryParameters),
+    headers: toHttpRequestParameters(draft.headers),
+    cookies: toHttpRequestParameters(draft.cookies),
     authentication: {
       type: draft.authenticationType,
       username: draft.username.trim(),
@@ -321,6 +548,7 @@ export function toHttpRequestConfiguration(draft: HttpRequestDraft): HttpRequest
     contentType: draft.contentType.trim(),
     connectTimeoutSeconds: Number(draft.connectTimeoutSeconds),
     requestTimeoutSeconds: Number(draft.requestTimeoutSeconds),
+    ignoreTlsValidation: draft.ignoreTlsValidation,
     redirectPolicy: draft.redirectPolicy,
     httpVersion: draft.httpVersion,
     expectedStatusCodes: parseStatuses(draft.expectedStatusCodes, "Status esperados"),
@@ -332,6 +560,293 @@ export function toHttpRequestConfiguration(draft: HttpRequestDraft): HttpRequest
       statusCodes: parseStatuses(draft.retryStatusCodes, "Status para nova tentativa"),
     },
   };
+}
+
+export function toHttpRequestDraft(
+  configuration: HttpRequestConfiguration,
+): HttpRequestDraft {
+  return {
+    method: configuration.method,
+    url: configuration.url,
+    queryParameters: toParameterDrafts(
+      configuration.queryParameters,
+      "query-edit",
+    ),
+    headers: toParameterDrafts(configuration.headers, "header-edit"),
+    cookies: toParameterDrafts(configuration.cookies, "cookie-edit"),
+    authenticationType: configuration.authentication.type,
+    username: configuration.authentication.username,
+    passwordSecretRef: configuration.authentication.passwordSecretRef,
+    tokenSecretRef: configuration.authentication.tokenSecretRef,
+    apiKeyName: configuration.authentication.apiKeyName,
+    apiKeyLocation: configuration.authentication.apiKeyLocation,
+    tokenUrl: configuration.authentication.tokenUrl,
+    clientId: configuration.authentication.clientId,
+    clientSecretRef: configuration.authentication.clientSecretRef,
+    scopes: configuration.authentication.scopes.join(" "),
+    audience: configuration.authentication.audience,
+    clientAuthenticationMethod:
+      configuration.authentication.clientAuthenticationMethod,
+    tokenParameters: parametersToJson(
+      configuration.authentication.tokenParameters,
+    ),
+    bodyType: configuration.bodyType,
+    body: configuration.body,
+    formParameters: parametersToJson(configuration.formParameters),
+    contentType: configuration.contentType,
+    connectTimeoutSeconds: String(configuration.connectTimeoutSeconds),
+    requestTimeoutSeconds: String(configuration.requestTimeoutSeconds),
+    ignoreTlsValidation: Boolean(configuration.ignoreTlsValidation),
+    redirectPolicy: configuration.redirectPolicy,
+    httpVersion: configuration.httpVersion,
+    expectedStatusCodes: configuration.expectedStatusCodes.join(", "),
+    maxResponseBytes: String(configuration.maxResponseBytes),
+    maxAttempts: String(configuration.retry.maxAttempts),
+    initialDelayMillis: String(configuration.retry.initialDelayMillis),
+    backoffMultiplier: String(configuration.retry.backoffMultiplier),
+    retryStatusCodes: configuration.retry.statusCodes.join(", "),
+  };
+}
+
+function ParameterListEditor({
+  label,
+  description,
+  addLabel,
+  addPresetLabel,
+  presetParameters = [],
+  idPrefix,
+  parameters,
+  showErrors,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  addLabel: string;
+  addPresetLabel?: string;
+  presetParameters?: readonly HttpRequestParameterPreset[];
+  idPrefix: string;
+  parameters: HttpRequestParameterDraft[];
+  showErrors: boolean;
+  onChange: (parameters: HttpRequestParameterDraft[]) => void;
+}) {
+  const styles = useStyles();
+  const titleId = useId();
+  const errorId = useId();
+  const error = parameterListError(parameters, label);
+  const parameterNames = new Set(
+    parameters
+      .map((parameter) => parameter.name.trim().toLocaleLowerCase("pt-BR"))
+      .filter(Boolean),
+  );
+  const missingPresetParameters = presetParameters.filter(
+    (parameter) =>
+      !parameterNames.has(parameter.name.toLocaleLowerCase("pt-BR")),
+  );
+
+  function updateParameter(
+    id: string,
+    update: Partial<HttpRequestParameterDraft>,
+  ) {
+    onChange(
+      parameters.map((parameter) =>
+        parameter.id === id ? { ...parameter, ...update } : parameter,
+      ),
+    );
+  }
+
+  return (
+    <section className={styles.parameterEditor} aria-labelledby={titleId}>
+      <div className={styles.parameterHeader}>
+        <div className={styles.parameterHeading}>
+          <h3 id={titleId} className={styles.parameterTitle}>
+            {label}
+          </h3>
+          <Text className={styles.parameterHint}>{description}</Text>
+        </div>
+
+        <div
+          className={styles.parameterActions}
+          role="group"
+          aria-label={`Ações de ${label.toLocaleLowerCase("pt-BR")}`}
+        >
+          {addPresetLabel ? (
+            <Button
+              type="button"
+              appearance="secondary"
+              size="small"
+              icon={<TextBulletListAddRegular />}
+              disabled={missingPresetParameters.length === 0}
+              onClick={() =>
+                onChange([
+                  ...parameters,
+                  ...missingPresetParameters.map((parameter) => ({
+                    ...parameter,
+                    id: createParameterRowId(idPrefix),
+                  })),
+                ])
+              }
+            >
+              {addPresetLabel}
+            </Button>
+          ) : null}
+
+          <Button
+            type="button"
+            appearance="secondary"
+            size="small"
+            icon={<AddRegular />}
+            onClick={() =>
+              onChange([
+                ...parameters,
+                {
+                  id: createParameterRowId(idPrefix),
+                  name: "",
+                  value: "",
+                  valueType: "VALUE",
+                },
+              ])
+            }
+          >
+            {addLabel}
+          </Button>
+
+          <Button
+            className={parameters.length > 0 ? styles.dangerAction : undefined}
+            type="button"
+            appearance="primary"
+            size="small"
+            icon={<DeleteRegular />}
+            disabled={parameters.length === 0}
+            onClick={() => onChange([])}
+          >
+            Remover todos
+          </Button>
+        </div>
+      </div>
+
+      <div className={styles.parameterTableFrame}>
+        <Table
+          className={styles.parameterTable}
+          size="small"
+          aria-label={`${label} da requisição HTTP`}
+          aria-describedby={showErrors && error ? errorId : undefined}
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell className={styles.parameterNameCell}>
+                Nome
+              </TableHeaderCell>
+              <TableHeaderCell className={styles.parameterValueCell}>
+                Valor
+              </TableHeaderCell>
+              <TableHeaderCell className={styles.parameterTypeCell}>
+                Tipo do valor
+              </TableHeaderCell>
+              <TableHeaderCell className={styles.parameterActionCell}>
+                Ações
+              </TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {parameters.length === 0 ? (
+              <TableRow>
+                <TableCell className={styles.emptyParameterCell} colSpan={4}>
+                  Nenhum item adicionado
+                </TableCell>
+              </TableRow>
+            ) : (
+              parameters.map((parameter, index) => {
+                const hasContent = Boolean(
+                  parameter.name.trim() || parameter.value.trim(),
+                );
+                const invalidName = hasContent && !parameter.name.trim();
+                const invalidSecret =
+                  parameter.valueType === "SECRET" &&
+                  !secretReferencePattern.test(parameter.value.trim());
+                const itemName = `${label.toLocaleLowerCase("pt-BR")} ${index + 1}`;
+
+                return (
+                  <TableRow key={parameter.id}>
+                    <TableCell>
+                      <Input
+                        className={styles.parameterInput}
+                        value={parameter.name}
+                        aria-label={`Nome de ${itemName}`}
+                        aria-invalid={showErrors && invalidName}
+                        aria-describedby={
+                          showErrors && invalidName ? errorId : undefined
+                        }
+                        placeholder="Nome"
+                        onChange={(_, data) =>
+                          updateParameter(parameter.id, { name: data.value })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        className={styles.parameterInput}
+                        value={parameter.value}
+                        aria-label={`Valor de ${itemName}`}
+                        aria-invalid={showErrors && invalidSecret}
+                        aria-describedby={
+                          showErrors && invalidSecret ? errorId : undefined
+                        }
+                        placeholder={
+                          parameter.valueType === "SECRET"
+                            ? "env:NOME_DA_VARIAVEL"
+                            : "Valor"
+                        }
+                        onChange={(_, data) =>
+                          updateParameter(parameter.id, { value: data.value })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        className={styles.parameterInput}
+                        value={parameter.valueType}
+                        aria-label={`Tipo do valor de ${itemName}`}
+                        onChange={(event) =>
+                          updateParameter(parameter.id, {
+                            valueType: event.target.value as HttpRequestParameterDraft["valueType"],
+                          })
+                        }
+                      >
+                        <option value="VALUE">Valor informado</option>
+                        <option value="SECRET">Referência de segredo</option>
+                      </Select>
+                    </TableCell>
+                    <TableCell className={styles.parameterActionCell}>
+                      <Button
+                        type="button"
+                        appearance="subtle"
+                        size="small"
+                        icon={<DeleteRegular />}
+                        aria-label={`Remover ${itemName}`}
+                        onClick={() =>
+                          onChange(
+                            parameters.filter(
+                              (current) => current.id !== parameter.id,
+                            ),
+                          )
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {showErrors && error ? (
+        <Text id={errorId} className={styles.parameterError} role="alert">
+          {error}
+        </Text>
+      ) : null}
+    </section>
+  );
 }
 
 function JsonParametersField({
@@ -371,6 +886,7 @@ export function HttpRequestEditor({
   onChange: (update: Partial<HttpRequestDraft>) => void;
 }) {
   const styles = useStyles();
+  const tlsDescriptionId = useId();
   const errors = validateHttpRequestDraft(draft);
   const urlError = errors.includes("Informe uma URL absoluta usando http ou https")
     ? "Informe uma URL absoluta usando http ou https"
@@ -400,7 +916,7 @@ export function HttpRequestEditor({
       ) : null}
 
       <fieldset className={styles.group}>
-        <legend className={styles.legend}>Destino e método</legend>
+        <legend className={styles.legend}>Destino</legend>
         <div className={styles.grid}>
           <Field label="Método HTTP" required>
             <Select value={draft.method} onChange={(event) => update("method", event.target.value as HttpRequestDraft["method"])}>
@@ -430,29 +946,39 @@ export function HttpRequestEditor({
       <fieldset className={styles.group}>
         <legend className={styles.legend}>Parâmetros</legend>
         <Text className={styles.help}>
-          Use objetos JSON. Um valor pode ser texto, número, booleano, uma lista ou uma referência como {`{"secretRef":"env:API_KEY"}`}.
+          Adicione cada item em uma linha. Para valores sensíveis, selecione
+          “Referência de segredo” e informe uma variável no formato
+          env:NOME_DA_VARIAVEL.
         </Text>
-        <div className={styles.grid}>
-          <JsonParametersField
+        <div className={styles.parameterSections}>
+          <ParameterListEditor
             label="Query string"
-            hint='Exemplo: {"page":1,"tag":["ops","daily"]}'
-            value={draft.queryParameters}
+            description="Parâmetros enviados após o sinal de interrogação da URL, como page=1 ou tag=ops."
+            addLabel="Adicionar parâmetro"
+            idPrefix="query"
+            parameters={draft.queryParameters}
             showErrors={showErrors}
-            onChange={(value) => update("queryParameters", value)}
+            onChange={(parameters) => update("queryParameters", parameters)}
           />
-          <JsonParametersField
+          <ParameterListEditor
             label="Cabeçalhos"
-            hint='Exemplo: {"Accept":"application/json","X-Key":{"secretRef":"env:API_KEY"}}'
-            value={draft.headers}
+            description="Metadados da requisição, como Accept, Content-Language ou uma chave de correlação."
+            addLabel="Adicionar cabeçalho"
+            addPresetLabel="Adicionar cabeçalhos padrão"
+            presetParameters={standardHttpHeaders}
+            idPrefix="header"
+            parameters={draft.headers}
             showErrors={showErrors}
-            onChange={(value) => update("headers", value)}
+            onChange={(parameters) => update("headers", parameters)}
           />
-          <JsonParametersField
+          <ParameterListEditor
             label="Cookies"
-            hint='Exemplo: {"tenant":"observabilidade"}'
-            value={draft.cookies}
+            description="Cookies enviados ao servidor, como tenant=observabilidade."
+            addLabel="Adicionar cookie"
+            idPrefix="cookie"
+            parameters={draft.cookies}
             showErrors={showErrors}
-            onChange={(value) => update("cookies", value)}
+            onChange={(parameters) => update("cookies", parameters)}
           />
         </div>
       </fieldset>
@@ -543,7 +1069,7 @@ export function HttpRequestEditor({
       </fieldset>
 
       <fieldset className={styles.group}>
-        <legend className={styles.legend}>Corpo</legend>
+        <legend className={styles.legend}>Body</legend>
         <div className={styles.grid}>
           <Field label="Tipo do corpo">
             <Select
@@ -600,7 +1126,7 @@ export function HttpRequestEditor({
             <Field label="Timeout de conexão (segundos)">
               <Input type="number" min={1} max={120} value={draft.connectTimeoutSeconds} onChange={(_, data) => update("connectTimeoutSeconds", data.value)} />
             </Field>
-            <Field label="Timeout total (segundos)">
+            <Field label="Timeout de resposta (segundos)">
               <Input type="number" min={1} max={3600} value={draft.requestTimeoutSeconds} onChange={(_, data) => update("requestTimeoutSeconds", data.value)} />
             </Field>
             <Field label="Redirecionamentos">
@@ -609,7 +1135,7 @@ export function HttpRequestEditor({
                 <option value="NORMAL">Seguir sem downgrade HTTPS</option>
               </Select>
             </Field>
-            <Field label="Versão HTTP preferencial">
+            <Field label="Versão do protocolo HTTP">
               <Select value={draft.httpVersion} onChange={(event) => update("httpVersion", event.target.value as HttpRequestConfiguration["httpVersion"])}>
                 <option value="HTTP_2">HTTP/2</option>
                 <option value="HTTP_1_1">HTTP/1.1</option>
@@ -627,13 +1153,42 @@ export function HttpRequestEditor({
             <Field label="Espera inicial entre tentativas (ms)">
               <Input type="number" min={0} max={60_000} value={draft.initialDelayMillis} onChange={(_, data) => update("initialDelayMillis", data.value)} />
             </Field>
-            <Field label="Multiplicador do backoff">
+            <Field
+              label="Fator de aumento da espera"
+              hint="Define quanto a espera cresce após cada falha. Com espera inicial de 1.000 ms e fator 2, as esperas serão de 1.000, 2.000 e 4.000 ms."
+            >
               <Input type="number" min={1} max={5} step={0.1} value={draft.backoffMultiplier} onChange={(_, data) => update("backoffMultiplier", data.value)} />
             </Field>
-            <Field label="Status que permitem nova tentativa" hint="Exemplo: 429, 500, 502, 503, 504">
+            <Field label="Códigos de resposta HTTP que acionam uma nova tentativa" hint="Exemplo: 429, 500, 502, 503, 504">
               <Input value={draft.retryStatusCodes} onChange={(_, data) => update("retryStatusCodes", data.value)} />
             </Field>
           </div>
+
+          <fieldset className={styles.tlsOptions}>
+            <legend className={styles.legend}>Segurança da conexão</legend>
+            <Checkbox
+              checked={draft.ignoreTlsValidation}
+              label="Ignorar validação SSL/TLS"
+              aria-describedby={tlsDescriptionId}
+              onChange={(_, data) =>
+                update("ignoreTlsValidation", data.checked === true)
+              }
+            />
+            <Text id={tlsDescriptionId} className={styles.tlsDescription}>
+              Aceita certificados autoassinados, expirados, emitidos por uma
+              autoridade não confiável ou com hostname diferente. Também se
+              aplica ao endpoint OAuth 2.0.
+            </Text>
+            {draft.ignoreTlsValidation ? (
+              <MessageBar intent="warning">
+                <MessageBarBody>
+                  Use somente em destinos internos controlados. Esta opção
+                  impede confirmar a identidade do servidor e deixa a conexão
+                  vulnerável a interceptação.
+                </MessageBarBody>
+              </MessageBar>
+            ) : null}
+          </fieldset>
         </div>
       </details>
     </div>

@@ -450,7 +450,12 @@ export function ScheduledJobDetailsDialog({
                         {job.httpRequest.bodyType} · {job.httpRequest.contentType || "Content-Type não definido"}
                       </DefinitionItem>
                       <DefinitionItem term="Timeouts">
-                        Conexão {job.httpRequest.connectTimeoutSeconds}s · total {job.httpRequest.requestTimeoutSeconds}s
+                        Conexão {job.httpRequest.connectTimeoutSeconds}s · resposta {job.httpRequest.requestTimeoutSeconds}s
+                      </DefinitionItem>
+                      <DefinitionItem term="Validação SSL/TLS">
+                        {job.httpRequest.ignoreTlsValidation
+                          ? "Ignorada (modo inseguro)"
+                          : "Ativa"}
                       </DefinitionItem>
                       <DefinitionItem term="Retentativas">
                         Até {job.httpRequest.retry.maxAttempts} tentativa(s)

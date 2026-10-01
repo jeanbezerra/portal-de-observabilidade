@@ -50,12 +50,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { PageBreadcrumb } from "../../components/page-breadcrumb";
-import {
-  DeleteScheduledJobDialog,
-  ScheduleEditorDialog,
-  type ScheduleDraft,
-} from "./scheduled-job-editor-dialogs";
-import { ScheduledJobDetailsDialog } from "./scheduled-job-details-dialog";
+import { DeleteScheduledJobDialog } from "./scheduled-job-editor-dialogs";
 import {
   getJobTriggerState,
   getPrimaryTrigger,
@@ -70,7 +65,6 @@ import {
   removeScheduledJob,
   runBulkJobAction,
   runJobAction,
-  updateScheduledJobTrigger,
 } from "./scheduler-api-client";
 import {
   ExecutionResultBadge,
@@ -83,6 +77,7 @@ const allGroups = "Todos os grupos" as const;
 const allStates = "Todos os estados" as const;
 const allTriggerTypes = "Todos os tipos" as const;
 const pageSizeOptions = [15, 45, 100] as const;
+const jobsRoute = "/administracao/agendamentos/rotinas-agendadas";
 
 type StateFilter = TriggerState | typeof allStates | "RUNNING";
 type TriggerTypeFilter = TriggerType | typeof allTriggerTypes;
@@ -638,7 +633,6 @@ export function ScheduledJobsPage() {
     intent: "success" | "warning" | "info" | "error";
     message: string;
   }>();
-  const [jobToEdit, setJobToEdit] = useState<ScheduledJob>();
   const [jobToDelete, setJobToDelete] = useState<ScheduledJob>();
   const [lastUpdated, setLastUpdated] = useState("agora");
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(
@@ -796,12 +790,6 @@ export function ScheduledJobsPage() {
   const interruptibleSelectedCount = selectedVisibleJobs.filter(
     (job) => job.activeExecution && job.interruptable,
   ).length;
-
-  function updateJob(jobId: string, updater: (job: ScheduledJob) => ScheduledJob) {
-    setJobs((current) =>
-      current.map((job) => (job.id === jobId ? updater(job) : job)),
-    );
-  }
 
   function replaceJob(updatedJob: ScheduledJob) {
     setJobs((current) =>
@@ -1007,33 +995,6 @@ export function ScheduledJobsPage() {
       setNotice({ intent: "success", message: `Cópia “${duplicatedJob.name}” criada e mantida pausada para revisão.` });
     } catch (error) {
       setNotice({ intent: "error", message: getSchedulerApiError(error, `Não foi possível duplicar “${job.name}”.`) });
-    }
-  }
-
-  async function handleSaveSchedule(job: ScheduledJob, draft: ScheduleDraft) {
-    const currentTrigger = getPrimaryTrigger(job);
-    if (!currentTrigger) return "A rotina não possui um trigger editável.";
-    try {
-      const updatedTrigger = await updateScheduledJobTrigger(job, {
-        ...currentTrigger,
-        type: draft.triggerType,
-        expression: draft.expression,
-        timeZone: draft.timeZone,
-        calendar: draft.calendar,
-        misfireInstruction: draft.misfireInstruction,
-        priority: draft.priority,
-      });
-      updateJob(job.id, (current) => ({ ...current, triggers: current.triggers.map((trigger, index) => index === 0 ? updatedTrigger : trigger) }));
-      setJobToEdit(undefined);
-      setNotice({ intent: "success", message: `Agendamento de “${job.name}” atualizado.` });
-      return undefined;
-    } catch (error) {
-      const message = getSchedulerApiError(
-        error,
-        `Não foi possível atualizar o agendamento de “${job.name}”.`,
-      );
-      setNotice({ intent: "error", message });
-      return message;
     }
   }
 
@@ -1426,10 +1387,13 @@ export function ScheduledJobsPage() {
                       </TableCell>
                       <TableCell className={styles.actionsCell}>
                         <div className={styles.actions}>
-                          <ScheduledJobDetailsDialog
-                            job={job}
-                            onTriggerNow={handleTriggerNow}
-                          />
+                          <Button
+                            as="a"
+                            appearance="secondary"
+                            href={`${jobsRoute}/${encodeURIComponent(job.group)}/${encodeURIComponent(job.name)}`}
+                          >
+                            Detalhes
+                          </Button>
                           <Menu>
                             <Tooltip content="Mais ações" relationship="label">
                               <MenuTrigger disableButtonEnhancement>
@@ -1445,7 +1409,11 @@ export function ScheduledJobsPage() {
                                 {trigger ? (
                                   <MenuItem
                                     icon={<EditRegular />}
-                                    onClick={() => setJobToEdit(job)}
+                                    onClick={() =>
+                                      navigate(
+                                        `${jobsRoute}/${encodeURIComponent(job.group)}/${encodeURIComponent(job.name)}?tab=schedule`,
+                                      )
+                                    }
                                   >
                                     Editar agendamento
                                   </MenuItem>
@@ -1628,12 +1596,6 @@ export function ScheduledJobsPage() {
         </div>
       </section>
 
-      <ScheduleEditorDialog
-        key={jobToEdit?.id ?? "no-job-to-edit"}
-        job={jobToEdit}
-        onClose={() => setJobToEdit(undefined)}
-        onSave={handleSaveSchedule}
-      />
       <DeleteScheduledJobDialog
         job={jobToDelete}
         onClose={() => setJobToDelete(undefined)}

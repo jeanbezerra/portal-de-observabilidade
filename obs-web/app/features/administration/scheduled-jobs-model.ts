@@ -53,6 +53,7 @@ export type HttpRequestConfiguration = {
   contentType: string;
   connectTimeoutSeconds: number;
   requestTimeoutSeconds: number;
+  ignoreTlsValidation: boolean;
   redirectPolicy: "NEVER" | "NORMAL";
   httpVersion: "HTTP_1_1" | "HTTP_2";
   expectedStatusCodes: number[];

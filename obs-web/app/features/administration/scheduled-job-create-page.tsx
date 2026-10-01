@@ -6,15 +6,13 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Text,
   Textarea,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  CheckmarkCircleRegular,
-} from "@fluentui/react-icons";
+import { AddRegular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 
@@ -92,6 +90,130 @@ const misfireOptions: Record<TriggerType, { value: string; label: string }[]> = 
     { value: "FIRE_ONCE_NOW", label: "Disparar uma vez agora" },
   ],
 };
+
+type MisfirePolicyInformation = {
+  title: string;
+  description: string;
+  example: string;
+};
+
+const misfirePolicyInformation: Record<
+  TriggerType,
+  Record<string, MisfirePolicyInformation>
+> = {
+  CronTrigger: {
+    SMART_POLICY: {
+      title: "Política inteligente para agenda cron",
+      description:
+        "Deixa o Quartz aplicar o comportamento padrão do CronTrigger. Quando um horário é perdido, ele faz um único disparo de recuperação assim que o scheduler volta e depois retoma a expressão cron normal. Não cria uma execução para cada horário perdido.",
+      example:
+        "Uma rotina prevista para 08:00 fica indisponível até 08:10. Ela executa uma vez às 08:10 e volta a seguir os próximos horários da expressão cron.",
+    },
+    DO_NOTHING: {
+      title: "Ignorar o disparo perdido",
+      description:
+        "Descarta os horários que passaram enquanto o scheduler não podia executar a rotina. Nenhuma recuperação é feita; o trigger aguarda o próximo horário futuro calculado pela expressão cron.",
+      example:
+        "A execução das 08:00 foi perdida e o próximo horário é 09:00. Ao voltar às 08:10, a rotina não executa e aguarda 09:00.",
+    },
+    FIRE_ONCE_NOW: {
+      title: "Recuperar com um único disparo imediato",
+      description:
+        "Executa a rotina uma vez assim que o scheduler puder processá-la, independentemente de quantos horários tenham sido perdidos. Depois desse disparo, a agenda cron volta ao ritmo normal.",
+      example:
+        "Os horários de 08:00, 08:15 e 08:30 foram perdidos. Quando o serviço volta às 08:40, ocorre uma execução imediata e a próxima segue a expressão cron.",
+    },
+    IGNORE_MISFIRE_POLICY: {
+      title: "Processar todos os disparos atrasados",
+      description:
+        "Ignora o mecanismo de consolidação de atrasos do Quartz. Cada ocorrência perdida continua elegível para execução, o que pode gerar várias chamadas em sequência e aumentar a carga no destino.",
+      example:
+        "Uma rotina executada a cada 15 minutos fica parada por uma hora. Ao voltar, até quatro disparos atrasados podem ser processados em sequência.",
+    },
+  },
+  SimpleTrigger: {
+    SMART_POLICY: {
+      title: "Política inteligente para repetição simples",
+      description:
+        "Deixa o Quartz escolher a recuperação conforme a quantidade de repetições configurada. Em uma execução única, dispara agora; em repetições, preserva ou recalcula a agenda sem enfileirar automaticamente todos os atrasos.",
+      example:
+        "Em um trigger que repete para sempre a cada 5 minutos, o Quartz recalcula a continuidade da agenda a partir do estado atual em vez de gerar uma rajada com todas as ocorrências perdidas.",
+    },
+    FIRE_NOW: {
+      title: "Disparar imediatamente",
+      description:
+        "Executa a ocorrência perdida assim que o scheduler volta a funcionar. As repetições seguintes continuam conforme as regras do SimpleTrigger.",
+      example:
+        "A execução prevista para 10:00 não ocorreu. Se o serviço voltar às 10:03, a rotina executa imediatamente às 10:03.",
+    },
+    RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT: {
+      title: "Reagendar agora mantendo a contagem original",
+      description:
+        "Move o início da continuidade para o momento atual e mantém a quantidade de repetições originalmente configurada. Isso pode prolongar o término da agenda porque os disparos perdidos não reduzem a contagem.",
+      example:
+        "Um trigger configurado com quatro repetições perde duas ocorrências. Ele recomeça agora e ainda preserva a contagem de repetições definida na criação.",
+    },
+    RESCHEDULE_NEXT_WITH_REMAINING_COUNT: {
+      title: "Aguardar o próximo intervalo com a contagem restante",
+      description:
+        "Não executa imediatamente. Calcula o próximo horário futuro e desconta da agenda as repetições que já deveriam ter ocorrido, preservando apenas a quantidade restante.",
+      example:
+        "De dez ocorrências, três foram perdidas durante uma indisponibilidade. A rotina aguarda o próximo intervalo e segue apenas com as ocorrências restantes.",
+    },
+  },
+  CalendarIntervalTrigger: {
+    SMART_POLICY: {
+      title: "Política inteligente para intervalo de calendário",
+      description:
+        "Usa o comportamento padrão do Quartz para recuperar uma ocorrência perdida uma vez e depois volta a calcular datas pelo intervalo de calendário, respeitando unidades como dia, semana ou mês.",
+      example:
+        "Uma rotina diária perde o horário de hoje. Ao voltar, executa uma vez e a próxima ocorrência continua sendo calculada para o dia seguinte.",
+    },
+    DO_NOTHING: {
+      title: "Ignorar a ocorrência e aguardar o próximo intervalo",
+      description:
+        "Descarta a ocorrência perdida e avança diretamente para a próxima data válida do intervalo de calendário. Não há execução de recuperação.",
+      example:
+        "Uma rotina mensal perde a execução de setembro. Ela não executa ao voltar e aguarda a data correspondente de outubro.",
+    },
+    FIRE_ONCE_NOW: {
+      title: "Executar uma vez agora e continuar o calendário",
+      description:
+        "Faz um único disparo de recuperação assim que possível e mantém os próximos cálculos com base no intervalo de calendário configurado.",
+      example:
+        "Uma rotina semanal perde a segunda-feira. Quando o serviço volta na terça, executa uma vez e depois continua na próxima data semanal calculada.",
+    },
+  },
+  DailyTimeIntervalTrigger: {
+    SMART_POLICY: {
+      title: "Política inteligente para janela diária",
+      description:
+        "Aplica o comportamento padrão do Quartz para recuperar uma ocorrência uma vez e retomar os intervalos válidos dentro dos dias e da janela diária configurados.",
+      example:
+        "Uma rotina de segunda a sexta, das 08:00 às 18:00, perde um disparo. Ao voltar dentro da janela, executa uma vez e retoma os próximos intervalos válidos.",
+    },
+    DO_NOTHING: {
+      title: "Ignorar e aguardar a próxima ocorrência da janela",
+      description:
+        "Descarta os disparos perdidos e espera o próximo intervalo que ainda esteja dentro dos dias e horários permitidos. Se a janela já terminou, aguarda a próxima janela válida.",
+      example:
+        "O serviço volta às 18:10, depois do fim da janela. A rotina não executa e aguarda a abertura da próxima janela às 08:00 de um dia permitido.",
+    },
+    FIRE_ONCE_NOW: {
+      title: "Executar uma vez agora e retomar a janela",
+      description:
+        "Consolida os disparos perdidos em uma única execução imediata. Depois, o trigger volta a respeitar os próximos intervalos dos dias e horários configurados.",
+      example:
+        "Três intervalos foram perdidos durante a manhã. Quando o scheduler volta, executa uma vez e continua no próximo intervalo válido da janela diária.",
+    },
+  },
+};
+
+function limitText(value: string, maximumLength: number) {
+  const normalized = value.trim();
+  if (normalized.length <= maximumLength) return normalized;
+  return `${normalized.slice(0, maximumLength - 1).trimEnd()}…`;
+}
 
 const triggerHints: Record<TriggerType, string> = {
   CronTrigger: "Use uma expressão cron do Quartz, por exemplo 0 0 8 ? * MON-FRI",
@@ -176,16 +298,9 @@ const useStyles = makeStyles({
     lineHeight: tokens.lineHeightBase400,
   },
   layout: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 320px",
-    alignItems: "start",
-    gap: tokens.spacingHorizontalXXL,
     width: "100%",
     maxWidth: "100%",
     minWidth: 0,
-    "@media (max-width: 1200px)": {
-      gridTemplateColumns: "minmax(0, 1fr)",
-    },
   },
   form: {
     display: "grid",
@@ -256,9 +371,6 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     backgroundColor: tokens.colorNeutralBackground2,
   },
-  typeDescription: {
-    color: tokens.colorNeutralForeground2,
-  },
   detailsList: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -326,6 +438,17 @@ const useStyles = makeStyles({
     paddingBottom: tokens.spacingVerticalL,
     borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
   },
+  misfireInformation: {
+    gridColumn: "1 / -1",
+  },
+  misfireInformationBody: {
+    display: "grid",
+    gap: tokens.spacingVerticalS,
+  },
+  misfireParagraph: {
+    margin: 0,
+    lineHeight: tokens.lineHeightBase300,
+  },
   actions: {
     display: "flex",
     justifyContent: "flex-end",
@@ -335,59 +458,6 @@ const useStyles = makeStyles({
       alignItems: "stretch",
       flexDirection: "column-reverse",
     },
-  },
-  summary: {
-    position: "sticky",
-    top: tokens.spacingVerticalXL,
-    display: "grid",
-    gap: tokens.spacingVerticalL,
-    padding: tokens.spacingHorizontalL,
-    border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusLarge,
-    backgroundColor: tokens.colorNeutralBackground1,
-    "@media (max-width: 1200px)": {
-      position: "static",
-    },
-  },
-  summaryTitle: {
-    margin: 0,
-    fontSize: tokens.fontSizeBase400,
-    lineHeight: tokens.lineHeightBase400,
-  },
-  summaryList: {
-    display: "grid",
-    gap: tokens.spacingVerticalM,
-    margin: 0,
-  },
-  summaryItem: {
-    display: "grid",
-    gap: tokens.spacingVerticalXXS,
-    paddingBottom: tokens.spacingVerticalM,
-    borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
-    ":last-child": {
-      paddingBottom: 0,
-      borderBottom: "none",
-    },
-  },
-  summaryTerm: {
-    color: tokens.colorNeutralForeground3,
-    fontSize: tokens.fontSizeBase200,
-  },
-  summaryValue: {
-    margin: 0,
-    overflowWrap: "anywhere",
-    fontWeight: tokens.fontWeightSemibold,
-  },
-  confirmation: {
-    display: "flex",
-    gap: tokens.spacingHorizontalS,
-    alignItems: "flex-start",
-    color: tokens.colorNeutralForeground2,
-  },
-  confirmationIcon: {
-    flexShrink: 0,
-    marginTop: "2px",
-    color: tokens.colorPaletteGreenForeground1,
   },
 });
 
@@ -448,6 +518,12 @@ export function ScheduledJobCreatePage() {
     availableJobTypes.find((option) => option.id === draft.jobTypeId) ??
     availableJobTypes[0] ??
     fallbackJobTypeOptions[0];
+  const jobTypeDescription =
+    limitText(selectedJobType.description, 500) ||
+    "Este tipo de job não possui uma descrição cadastrada.";
+  const selectedMisfirePolicy =
+    misfirePolicyInformation[draft.triggerType][draft.misfireInstruction] ??
+    misfirePolicyInformation[draft.triggerType].SMART_POLICY;
   const normalizedName = draft.name.trim().toLocaleLowerCase("pt-BR");
   const normalizedGroup = draft.group.trim().toLocaleLowerCase("pt-BR");
   const jobKey =
@@ -482,9 +558,6 @@ export function ScheduledJobCreatePage() {
       ? "Informe uma prioridade inteira"
       : undefined;
   const httpRequestErrors = validateHttpRequestDraft(draft.httpRequest);
-  const triggerLabel = draft.createTrigger
-    ? `${draft.triggerType} · ${draft.timeZone}`
-    : "Sem trigger inicial";
   const jobBehavior = useMemo(() => {
     const behavior: string[] = [];
     behavior.push(
@@ -677,11 +750,13 @@ export function ScheduledJobCreatePage() {
               <Field
                 className={styles.fullWidth}
                 label="Descrição"
-                hint="Explique o resultado esperado e o impacto operacional"
+                hint="Explique o resultado esperado e o impacto operacional em até 500 caracteres"
               >
                 <Textarea
                   className={styles.textarea}
                   value={draft.description}
+                  maxLength={500}
+                  resize="vertical"
                   onChange={(_, data) =>
                     updateDraft({ description: data.value })
                   }
@@ -700,8 +775,8 @@ export function ScheduledJobCreatePage() {
                   Tipo de job
                 </h2>
                 <p className={styles.sectionDescription}>
-                  Selecione o executor autorizado pela API. Não é necessário
-                  informar uma classe Java.
+                  Selecione um tipo pré-definido de Job para configurar o novo
+                  agendamento.
                 </p>
               </div>
             </div>
@@ -722,10 +797,6 @@ export function ScheduledJobCreatePage() {
             </Field>
 
             <div className={styles.typeDetails}>
-              <Text weight="semibold">{selectedJobType.name}</Text>
-              <Text className={styles.typeDescription}>
-                {selectedJobType.description}
-              </Text>
               <dl className={styles.detailsList}>
                 <div className={styles.detailItem}>
                   <dt className={styles.detailTerm}>Executor</dt>
@@ -756,17 +827,16 @@ export function ScheduledJobCreatePage() {
               </span>
               <div className={styles.sectionCopy}>
                 <h2 id="job-detail-title" className={styles.sectionTitle}>
-                  Requisição HTTP e comportamento
+                  {selectedJobType.name}
                 </h2>
                 <p className={styles.sectionDescription}>
-                  Configure o destino, parâmetros, autenticação, conteúdo e os
-                  limites operacionais da chamada.
+                  {jobTypeDescription}
                 </p>
               </div>
             </div>
 
             <fieldset className={styles.fieldset}>
-              <legend className={styles.legend}>Comportamento do JobDetail</legend>
+              <legend className={styles.legend}>Características do Job</legend>
               <div className={styles.optionGrid}>
                 <div className={styles.option}>
                   <Checkbox
@@ -944,6 +1014,24 @@ export function ScheduledJobCreatePage() {
                     ))}
                   </Select>
                 </Field>
+                <section
+                  className={styles.misfireInformation}
+                  aria-labelledby="misfire-information-title"
+                >
+                  <MessageBar intent="info">
+                    <MessageBarBody className={styles.misfireInformationBody}>
+                      <MessageBarTitle id="misfire-information-title">
+                        {selectedMisfirePolicy.title}
+                      </MessageBarTitle>
+                      <p className={styles.misfireParagraph}>
+                        {selectedMisfirePolicy.description}
+                      </p>
+                      <p className={styles.misfireParagraph}>
+                        <strong>Exemplo:</strong> {selectedMisfirePolicy.example}
+                      </p>
+                    </MessageBarBody>
+                  </MessageBar>
+                </section>
               </div>
             ) : (
               <MessageBar intent="warning">
@@ -971,47 +1059,6 @@ export function ScheduledJobCreatePage() {
           </div>
         </form>
 
-        <aside className={styles.summary} aria-labelledby="summary-title">
-          <h2 id="summary-title" className={styles.summaryTitle}>
-            Resumo da criação
-          </h2>
-          <dl className={styles.summaryList}>
-            <div className={styles.summaryItem}>
-              <dt className={styles.summaryTerm}>JobKey</dt>
-              <dd className={styles.summaryValue}>
-                <code className={styles.code}>{jobKey}</code>
-              </dd>
-            </div>
-            <div className={styles.summaryItem}>
-              <dt className={styles.summaryTerm}>Tipo de job</dt>
-              <dd className={styles.summaryValue}>{selectedJobType.name}</dd>
-            </div>
-            <div className={styles.summaryItem}>
-              <dt className={styles.summaryTerm}>Comportamento</dt>
-              <dd className={styles.summaryValue}>{jobBehavior}</dd>
-            </div>
-            <div className={styles.summaryItem}>
-              <dt className={styles.summaryTerm}>Agendamento</dt>
-              <dd className={styles.summaryValue}>{triggerLabel}</dd>
-            </div>
-            <div className={styles.summaryItem}>
-              <dt className={styles.summaryTerm}>Destino HTTP</dt>
-              <dd className={styles.summaryValue}>
-                {draft.httpRequest.method} {draft.httpRequest.url || "URL ainda não informada"}
-              </dd>
-            </div>
-          </dl>
-          <div className={styles.confirmation}>
-            <CheckmarkCircleRegular
-              className={styles.confirmationIcon}
-              aria-hidden="true"
-            />
-            <Text size={200}>
-              Ao confirmar, a API persistirá o JobDetail e o Trigger de
-              forma atômica quando houver agendamento inicial.
-            </Text>
-          </div>
-        </aside>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import type { CalendarEntry } from "./calendar-model";
 import type { JobGroup } from "./job-group-model";
 import type {
   ActiveExecution,
+  HttpRequestConfiguration,
   JobTrigger,
   ScheduledJob,
 } from "./scheduled-jobs-model";
@@ -296,12 +297,35 @@ export async function listScheduledJobs() {
   return (await request<WireJob[]>("/jobs")).map(mapJob);
 }
 
+export async function getScheduledJob(group: string, name: string) {
+  return mapJob(
+    await request<WireJob>(
+      `/jobs/${encodeURIComponent(group)}/${encodeURIComponent(name)}`,
+    ),
+  );
+}
+
 export async function createScheduledJob(job: ScheduledJob) {
   return mapJob(
     await request<WireJob>("/jobs", {
       method: "POST",
       body: payload(jobPayload(job)),
     }),
+  );
+}
+
+export async function updateScheduledJobConfiguration(
+  job: ScheduledJob,
+  httpRequest: HttpRequestConfiguration,
+) {
+  return mapJob(
+    await request<WireJob>(
+      `/jobs/${encodeURIComponent(job.group)}/${encodeURIComponent(job.name)}/configuration`,
+      {
+        method: "PUT",
+        body: payload({ type: job.type, httpRequest }),
+      },
+    ),
   );
 }
 

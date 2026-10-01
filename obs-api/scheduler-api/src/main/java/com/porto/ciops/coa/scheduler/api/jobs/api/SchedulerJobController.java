@@ -6,6 +6,7 @@ import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionRes
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobTypeConfigurationRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.TriggerResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -64,6 +65,15 @@ public class SchedulerJobController {
 			@PathVariable String triggerName,
 			@Valid @RequestBody TriggerRequest request) throws SchedulerException {
 		return service.updateTrigger(jobGroup, jobName, triggerGroup, triggerName, request);
+	}
+
+	@PutMapping("/jobs/{group}/{name}/configuration")
+	@Operation(summary = "Atualizar a configuração do tipo do job")
+	JobResponse updateJobTypeConfiguration(
+			@PathVariable String group,
+			@PathVariable String name,
+			@Valid @RequestBody JobTypeConfigurationRequest request) throws SchedulerException {
+		return service.updateJobTypeConfiguration(group, name, request);
 	}
 
 	@PostMapping("/jobs/{group}/{name}/pause")
