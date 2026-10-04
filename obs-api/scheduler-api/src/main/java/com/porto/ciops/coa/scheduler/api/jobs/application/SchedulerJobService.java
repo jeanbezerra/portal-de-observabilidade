@@ -4,6 +4,8 @@ import com.porto.ciops.coa.scheduler.api.administration.application.Administrati
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobKeyRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogPageResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
@@ -287,6 +289,24 @@ public class SchedulerJobService {
 
 	public List<ExecutionHistoryResponse> listExecutions(int limit) {
 		return queries.listExecutions(limit);
+	}
+
+	public List<ExecutionLogResponse> listExecutionLogs(String group, String name, int limit) {
+		return queries.listExecutionLogs(group, name, limit);
+	}
+
+	public ExecutionLogPageResponse searchExecutionLogs(
+			String group,
+			String name,
+			int page,
+			int pageSize,
+			String sort,
+			String direction,
+			String level,
+			String fireInstanceId,
+			String query) {
+		return queries.searchExecutionLogs(
+				group, name, page, pageSize, sort, direction, level, fireInstanceId, query);
 	}
 
 	private void insertMetadata(JobRequest request) {

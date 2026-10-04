@@ -109,6 +109,10 @@ export type ScheduledJob = {
   interruptable: boolean;
   triggers: JobTrigger[];
   activeExecution?: ActiveExecution;
+  executionCounts: {
+    successCount: number;
+    failureCount: number;
+  };
   lastExecution: {
     result: ExecutionResult;
     finishedAt: string;

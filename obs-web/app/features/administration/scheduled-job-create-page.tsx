@@ -621,6 +621,10 @@ export function ScheduledJobCreatePage() {
             },
           ]
         : [],
+      executionCounts: {
+        successCount: 0,
+        failureCount: 0,
+      },
       lastExecution: {
         result: "NONE",
         finishedAt: "Nunca executado",

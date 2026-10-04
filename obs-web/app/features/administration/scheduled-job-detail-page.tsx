@@ -60,6 +60,7 @@ import {
   type HttpRequestDraft,
 } from "./http-request-editor";
 import { DeleteScheduledJobDialog } from "./scheduled-job-editor-dialogs";
+import { ScheduledJobLogsPanel } from "./scheduled-job-logs-panel";
 import {
   getJobTriggerState,
   getPrimaryTrigger,
@@ -92,6 +93,7 @@ type DetailTab =
   | "overview"
   | "metadata"
   | "executions"
+  | "logs"
   | "job-type"
   | "schedule";
 type JobAction = "pause" | "resume" | "trigger" | "interrupt" | "duplicate";
@@ -232,6 +234,7 @@ function isDetailTab(value: string | null): value is DetailTab {
     value === "overview" ||
     value === "metadata" ||
     value === "executions" ||
+    value === "logs" ||
     value === "job-type" ||
     value === "schedule"
   );
@@ -973,6 +976,7 @@ export function ScheduledJobDetailPage({ group, name }: { group: string; name: s
           <Tab id={`${tabIdPrefix}-overview`} value="overview">Visão geral</Tab>
           <Tab id={`${tabIdPrefix}-metadata`} value="metadata">Metadados do job</Tab>
           <Tab id={`${tabIdPrefix}-executions`} value="executions">Execuções ({history.length})</Tab>
+          <Tab id={`${tabIdPrefix}-logs`} value="logs">Logs</Tab>
           <Tab className={styles.editTabStart} icon={<EditRegular />} id={`${tabIdPrefix}-job-type`} value="job-type">
             Job Type · {currentJob.type === "HTTP_REQUEST" ? "HTTP" : currentJob.type}
           </Tab>
@@ -1356,6 +1360,22 @@ export function ScheduledJobDetailPage({ group, name }: { group: string; name: s
               </Table>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {selectedTab === "logs" ? (
+        <div
+          className={styles.panel}
+          role="tabpanel"
+          tabIndex={0}
+          aria-labelledby={`${tabIdPrefix}-logs`}
+        >
+          <ScheduledJobLogsPanel
+            key={`${currentJob.group}.${currentJob.name}`}
+            group={currentJob.group}
+            name={currentJob.name}
+            isRunning={Boolean(currentJob.activeExecution)}
+          />
         </div>
       ) : null}
 

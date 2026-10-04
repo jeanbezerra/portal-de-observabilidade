@@ -1,5 +1,6 @@
 package com.porto.ciops.coa.scheduler.api.jobs.infrastructure.quartz;
 
+import com.porto.ciops.coa.scheduler.api.jobs.application.ExecutionLogRecorder;
 import java.sql.Timestamp;
 import java.time.Instant;
 import org.quartz.JobExecutionContext;
@@ -12,9 +13,11 @@ import org.springframework.stereotype.Component;
 public class ExecutionHistoryListener implements JobListener {
 
 	private final JdbcTemplate jdbc;
+	private final ExecutionLogRecorder executionLogs;
 
-	public ExecutionHistoryListener(JdbcTemplate jdbc) {
+	public ExecutionHistoryListener(JdbcTemplate jdbc, ExecutionLogRecorder executionLogs) {
 		this.jdbc = jdbc;
+		this.executionLogs = executionLogs;
 	}
 
 	@Override
@@ -37,6 +40,14 @@ public class ExecutionHistoryListener implements JobListener {
 				timestamp(context.getScheduledFireTime() == null ? null : context.getScheduledFireTime().toInstant()),
 				timestamp(context.getFireTime().toInstant()), "Execução iniciada.",
 				context.getRefireCount(), context.isRecovering());
+		executionLogs.info(context.getFireInstanceId(), "quartz", "Execução iniciada.", """
+				Job: %s
+				Trigger: %s
+				Instância: %s
+				Refire count: %d
+				Recuperação: %s
+				""".formatted(context.getJobDetail().getKey(), context.getTrigger().getKey(),
+				schedulerInstance(context), context.getRefireCount(), context.isRecovering()).strip());
 	}
 
 	@Override
@@ -46,6 +57,8 @@ public class ExecutionHistoryListener implements JobListener {
 				SET finished_at = ?, duration_ms = 0, result = 'FAILED', message = ?
 				WHERE fire_instance_id = ?
 				""", timestamp(Instant.now()), "Execução vetada por um listener do scheduler.", context.getFireInstanceId());
+		executionLogs.warn(context.getFireInstanceId(), "quartz",
+				"Execução vetada por um listener do scheduler.", null);
 	}
 
 	@Override
@@ -59,6 +72,13 @@ public class ExecutionHistoryListener implements JobListener {
 				SET finished_at = ?, duration_ms = ?, result = ?, message = ?
 				WHERE fire_instance_id = ?
 				""", timestamp(Instant.now()), context.getJobRunTime(), result, message, context.getFireInstanceId());
+		if (jobException != null) {
+			executionLogs.error(context.getFireInstanceId(), "quartz", message, jobException);
+		}
+		else {
+			executionLogs.info(context.getFireInstanceId(), "quartz", message,
+					"Duração: " + context.getJobRunTime() + " ms");
+		}
 	}
 
 	private static String successMessage(JobExecutionContext context) {

@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Card,
   Field,
@@ -90,6 +91,7 @@ type SortColumn =
   | "group"
   | "schedule"
   | "nextExecution"
+  | "executions"
   | "lastResult";
 type SortDirection = "ascending" | "descending";
 type SortState = {
@@ -143,6 +145,7 @@ const jobCollator = new Intl.Collator("pt-BR", {
   numeric: true,
   sensitivity: "base",
 });
+const numberFormatter = new Intl.NumberFormat("pt-BR");
 
 const monthIndexes: Record<string, number> = {
   jan: 0,
@@ -228,6 +231,13 @@ function compareJobs(
       firstTrigger?.nextFireTime ?? "Não agendada",
       secondTrigger?.nextFireTime ?? "Não agendada",
     );
+  }
+  if (column === "executions") {
+    const firstTotal =
+      first.executionCounts.successCount + first.executionCounts.failureCount;
+    const secondTotal =
+      second.executionCounts.successCount + second.executionCounts.failureCount;
+    return firstTotal - secondTotal;
   }
   return jobCollator.compare(
     getExecutionResultLabel(first.lastExecution.result),
@@ -439,7 +449,7 @@ const useStyles = makeStyles({
   },
   table: {
     width: "100%",
-    minWidth: "1240px",
+    minWidth: "1400px",
   },
   tableRow: {
     backgroundColor: tokens.colorNeutralBackground1,
@@ -484,6 +494,13 @@ const useStyles = makeStyles({
     minWidth: "156px",
     backgroundColor: "inherit",
     boxShadow: `-${tokens.strokeWidthThin} 0 0 ${tokens.colorNeutralStroke2}`,
+  },
+  executionCounts: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+    minWidth: "178px",
+    flexWrap: "wrap",
   },
   secondary: {
     color: tokens.colorNeutralForeground2,
@@ -1335,6 +1352,13 @@ export function ScheduledJobsPage() {
                   >
                     Último resultado
                   </TableHeaderCell>
+                  <TableHeaderCell
+                    sortable
+                    sortDirection={getSortDirection("executions")}
+                    onClick={() => toggleSort("executions")}
+                  >
+                    Execuções
+                  </TableHeaderCell>
                   <TableHeaderCell className={styles.actionsHeader}>
                     Ações
                   </TableHeaderCell>
@@ -1384,6 +1408,40 @@ export function ScheduledJobsPage() {
                         <ExecutionResultBadge
                           result={job.lastExecution.result}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <div className={styles.executionCounts}>
+                          <Badge
+                            appearance="tint"
+                            color={
+                              job.executionCounts.successCount > 0
+                                ? "success"
+                                : "subtle"
+                            }
+                          >
+                            {numberFormatter.format(
+                              job.executionCounts.successCount,
+                            )}{" "}
+                            {job.executionCounts.successCount === 1
+                              ? "sucesso"
+                              : "sucessos"}
+                          </Badge>
+                          <Badge
+                            appearance="tint"
+                            color={
+                              job.executionCounts.failureCount > 0
+                                ? "danger"
+                                : "subtle"
+                            }
+                          >
+                            {numberFormatter.format(
+                              job.executionCounts.failureCount,
+                            )}{" "}
+                            {job.executionCounts.failureCount === 1
+                              ? "erro"
+                              : "erros"}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className={styles.actionsCell}>
                         <div className={styles.actions}>

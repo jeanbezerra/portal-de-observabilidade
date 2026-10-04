@@ -4,6 +4,8 @@ import com.porto.ciops.coa.scheduler.api.jobs.application.SchedulerJobService;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.BulkJobActionResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogPageResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobTypeConfigurationRequest;
@@ -123,5 +125,30 @@ public class SchedulerJobController {
 	@Operation(summary = "Consultar o histórico de execuções")
 	List<ExecutionHistoryResponse> listExecutions(@RequestParam(defaultValue = "200") int limit) {
 		return service.listExecutions(limit);
+	}
+
+	@GetMapping("/jobs/{group}/{name}/logs")
+	@Operation(summary = "Consultar os logs das execuções de uma rotina")
+	List<ExecutionLogResponse> listExecutionLogs(
+			@PathVariable String group,
+			@PathVariable String name,
+			@RequestParam(defaultValue = "500") int limit) {
+		return service.listExecutionLogs(group, name, limit);
+	}
+
+	@GetMapping("/jobs/{group}/{name}/logs/search")
+	@Operation(summary = "Pesquisar os logs paginados das execuções de uma rotina")
+	ExecutionLogPageResponse searchExecutionLogs(
+			@PathVariable String group,
+			@PathVariable String name,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "25") int pageSize,
+			@RequestParam(defaultValue = "loggedAt") String sort,
+			@RequestParam(defaultValue = "desc") String direction,
+			@RequestParam(defaultValue = "ALL") String level,
+			@RequestParam(defaultValue = "") String fireInstanceId,
+			@RequestParam(defaultValue = "") String query) {
+		return service.searchExecutionLogs(
+				group, name, page, pageSize, sort, direction, level, fireInstanceId, query);
 	}
 }

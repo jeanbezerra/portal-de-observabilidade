@@ -1,5 +1,6 @@
 package com.porto.ciops.coa.scheduler.api.jobs.infrastructure.http;
 
+import com.porto.ciops.coa.scheduler.api.jobs.application.ExecutionLogRecorder;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpAuthentication;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestParameter;
@@ -73,22 +74,33 @@ public class HttpRequestJobExecutor {
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
 	private final EnvironmentSecretResolver secrets;
+	private final ExecutionLogRecorder executionLogs;
 	private final List<String> allowedHosts;
 
 	public HttpRequestJobExecutor(JdbcTemplate jdbc, ObjectMapper objectMapper, EnvironmentSecretResolver secrets,
+			ExecutionLogRecorder executionLogs,
 			@Value("${app.http-executor.allowed-hosts:*}") String allowedHosts) {
 		this.jdbc = jdbc;
 		this.objectMapper = objectMapper;
 		this.secrets = secrets;
+		this.executionLogs = executionLogs;
 		this.allowedHosts = List.of(allowedHosts.split(",")).stream().map(String::trim)
 				.filter(value -> !value.isEmpty()).map(value -> value.toLowerCase(Locale.ROOT)).toList();
 	}
 
-	public String execute(JobKey key) throws IOException, InterruptedException {
+	public String execute(JobKey key, String fireInstanceId) throws IOException, InterruptedException {
 		HttpRequestConfiguration configuration = loadConfiguration(key);
 		HttpClient client = buildClient(configuration);
+		URI configuredUri = URI.create(configuration.url());
+		executionLogs.info(fireInstanceId, "http-executor", "Configuração HTTP carregada.", """
+				Método: %s
+				Destino: %s
+				Autenticação: %s
+				Máximo de tentativas: %d
+				""".formatted(configuration.method(), safeTarget(configuredUri), configuration.authentication().type(),
+				configuration.retry().maxAttempts()).strip());
 		List<HttpRequestParameter> queryParameters = new ArrayList<>(configuration.queryParameters());
-		String authorization = resolveAuthentication(client, configuration, queryParameters);
+		String authorization = resolveAuthentication(client, configuration, queryParameters, fireInstanceId);
 		URI uri = withQueryParameters(configuration.url(), queryParameters);
 		ensureTargetAllowed(uri);
 
@@ -98,17 +110,28 @@ public class HttpRequestJobExecutor {
 		IOException lastIoFailure = null;
 
 		for (int attempt = 1; attempt <= retry.maxAttempts(); attempt++) {
+			executionLogs.info(fireInstanceId, "http-executor",
+					"Enviando tentativa " + attempt + " de " + retry.maxAttempts() + ".",
+					configuration.method() + " " + safeTarget(uri));
 			try {
 				HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
 				byte[] responseBody = readLimited(response.body(), configuration.maxResponseBytes());
 				if (retry.statusCodes().contains(response.statusCode()) && attempt < retry.maxAttempts()) {
+					executionLogs.warn(fireInstanceId, "http-executor",
+							"A tentativa recebeu um status configurado para nova tentativa.",
+							"Status HTTP: " + response.statusCode() + "\nNova tentativa em: " + delayMillis + " ms");
 					delay(delayMillis);
 					delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
 					continue;
 				}
 				if (!isExpectedStatus(response.statusCode(), configuration.expectedStatusCodes())) {
-					throw new UnexpectedHttpStatusException(response.statusCode());
+					UnexpectedHttpStatusException failure = new UnexpectedHttpStatusException(response.statusCode());
+					executionLogs.error(fireInstanceId, "http-executor", failure.getMessage(), failure);
+					throw failure;
 				}
+				executionLogs.info(fireInstanceId, "http-executor", "Requisição HTTP concluída com sucesso.",
+						"Status HTTP: " + response.statusCode() + "\nBytes recebidos: " + responseBody.length
+								+ "\nTentativa: " + attempt + " de " + retry.maxAttempts());
 				return "HTTP " + response.statusCode() + " · " + responseBody.length
 						+ " bytes recebidos · tentativa " + attempt + " de " + retry.maxAttempts() + ".";
 			}
@@ -116,14 +139,23 @@ public class HttpRequestJobExecutor {
 				throw exception;
 			}
 			catch (IOException exception) {
+				IOException failure = exception;
 				if (!configuration.ignoreTlsValidation() && exception instanceof SSLException) {
-					throw new IOException(
+					failure = new IOException(
 							"Falha na conexão SSL/TLS. Verifique o certificado e o hostname do servidor. "
 									+ "Para destinos internos controlados, habilite a opção de ignorar a validação SSL/TLS.",
 							exception);
 				}
-				lastIoFailure = exception;
-				if (attempt == retry.maxAttempts()) break;
+				lastIoFailure = failure;
+				if (attempt == retry.maxAttempts()) {
+					executionLogs.error(fireInstanceId, "http-executor",
+							"A requisição HTTP falhou após " + attempt + " tentativa(s).", failure);
+					break;
+				}
+				executionLogs.warn(fireInstanceId, "http-executor",
+						"A tentativa falhou e será repetida.",
+						failure.getClass().getSimpleName() + ": " + failure.getMessage()
+								+ "\nNova tentativa em: " + delayMillis + " ms");
 				delay(delayMillis);
 				delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
 			}
@@ -206,7 +238,7 @@ public class HttpRequestJobExecutor {
 	}
 
 	private String resolveAuthentication(HttpClient client, HttpRequestConfiguration configuration,
-			List<HttpRequestParameter> queryParameters) throws IOException, InterruptedException {
+			List<HttpRequestParameter> queryParameters, String fireInstanceId) throws IOException, InterruptedException {
 		HttpAuthentication authentication = configuration.authentication();
 		return switch (authentication.type()) {
 			case "NONE" -> null;
@@ -222,15 +254,18 @@ public class HttpRequestJobExecutor {
 				}
 				yield null;
 			}
-			case "OAUTH2_CLIENT_CREDENTIALS" -> requestOAuthToken(client, configuration, authentication);
+			case "OAUTH2_CLIENT_CREDENTIALS" -> requestOAuthToken(
+					client, configuration, authentication, fireInstanceId);
 			default -> throw new IllegalStateException("Tipo de autenticação HTTP não suportado.");
 		};
 	}
 
 	private String requestOAuthToken(HttpClient client, HttpRequestConfiguration configuration,
-			HttpAuthentication authentication) throws IOException, InterruptedException {
+			HttpAuthentication authentication, String fireInstanceId) throws IOException, InterruptedException {
 		URI tokenUri = URI.create(authentication.tokenUrl());
 		ensureTargetAllowed(tokenUri);
+		executionLogs.info(fireInstanceId, "http-executor", "Solicitando token OAuth 2.0.",
+				"Destino: " + safeTarget(tokenUri));
 		List<HttpRequestParameter> tokenParameters = new ArrayList<>();
 		tokenParameters.add(new HttpRequestParameter("grant_type", "client_credentials", null));
 		if (!authentication.scopes().isEmpty()) {
@@ -262,6 +297,8 @@ public class HttpRequestJobExecutor {
 		if (response.statusCode() < 200 || response.statusCode() > 299) {
 			throw new IOException("O servidor OAuth 2.0 respondeu com status HTTP " + response.statusCode() + ".");
 		}
+		executionLogs.info(fireInstanceId, "http-executor", "Token OAuth 2.0 obtido.",
+				"Status HTTP: " + response.statusCode() + "\nBytes recebidos: " + body.length);
 		JsonNode payload = objectMapper.readTree(body);
 		String accessToken = payload.path("access_token").stringValue("");
 		if (accessToken.isBlank()) throw new IOException("A resposta OAuth 2.0 não contém access_token.");
@@ -334,6 +371,14 @@ public class HttpRequestJobExecutor {
 
 	private static String encode(String value) {
 		return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+	}
+
+	private static String safeTarget(URI uri) {
+		StringBuilder target = new StringBuilder(uri.getScheme()).append("://").append(uri.getHost());
+		if (uri.getPort() >= 0) target.append(':').append(uri.getPort());
+		if (uri.getRawPath() != null && !uri.getRawPath().isBlank()) target.append(uri.getRawPath());
+		if (uri.getRawQuery() != null) target.append("?[parâmetros omitidos]");
+		return target.toString();
 	}
 
 	private static final class UnexpectedHttpStatusException extends IOException {

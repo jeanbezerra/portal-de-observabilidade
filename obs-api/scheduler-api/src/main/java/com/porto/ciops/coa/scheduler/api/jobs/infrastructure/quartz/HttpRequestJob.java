@@ -21,7 +21,7 @@ public class HttpRequestJob implements InterruptableJob {
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 		executionThread = Thread.currentThread();
 		try {
-			context.setResult(executor.execute(context.getJobDetail().getKey()));
+			context.setResult(executor.execute(context.getJobDetail().getKey(), context.getFireInstanceId()));
 		}
 		catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,6 +37,9 @@ class SchedulerJobApiTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private JdbcTemplate jdbc;
+
 	@BeforeAll
 	static void startTargetServer() throws Exception {
 		targetServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -46,6 +51,11 @@ class SchedulerJobApiTests {
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
 			exchange.sendResponseHeaders(202, response.length);
 			exchange.getResponseBody().write(response);
+			exchange.close();
+			requestReceived.countDown();
+		});
+		targetServer.createContext("/failure", exchange -> {
+			exchange.sendResponseHeaders(500, -1);
 			exchange.close();
 			requestReceived.countDown();
 		});
@@ -114,6 +124,8 @@ class SchedulerJobApiTests {
 				.andExpect(jsonPath("$.httpRequest.method", is("POST")))
 				.andExpect(jsonPath("$.httpRequest.headers[0].name", is("X-Origin")))
 				.andExpect(jsonPath("$.httpRequest.ignoreTlsValidation", is(false)))
+				.andExpect(jsonPath("$.executionCounts.successCount", is(0)))
+				.andExpect(jsonPath("$.executionCounts.failureCount", is(0)))
 				.andExpect(jsonPath("$.triggers[0].type", is("CronTrigger")));
 
 		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-integration-test/pause"))
@@ -150,10 +162,74 @@ class SchedulerJobApiTests {
 		}
 		org.assertj.core.api.Assertions.assertThat(receivedRequest.get())
 				.contains("PUT /jobs?origem=edited editor", "\"message\":\"atualizado\"");
+		waitForExecutionResult("plataforma", "rotina-integration-test", "SUCCESS", 1);
 
 		mockMvc.perform(get("/api/v1/jobs/plataforma/rotina-integration-test"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.durable", is(true)));
+				.andExpect(jsonPath("$.durable", is(true)))
+				.andExpect(jsonPath("$.executionCounts.successCount", is(1)))
+				.andExpect(jsonPath("$.executionCounts.failureCount", is(0)));
+		mockMvc.perform(get("/api/v1/jobs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(
+						"$[?(@.id == 'plataforma.rotina-integration-test')].executionCounts.successCount")
+						.value(1));
+
+		String executionLogs = mockMvc.perform(
+				get("/api/v1/jobs/plataforma/rotina-integration-test/logs").param("limit", "100"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].fireInstanceId").isNotEmpty())
+				.andExpect(jsonPath("$[0].level").isNotEmpty())
+				.andReturn().getResponse().getContentAsString();
+		org.assertj.core.api.Assertions.assertThat(executionLogs)
+				.contains("\"source\":\"http-executor\"")
+				.doesNotContain("atualizado", "editor");
+		String fireInstanceId = jdbc.queryForObject("""
+				SELECT fire_instance_id
+				FROM public.scheduler_execution_history
+				WHERE job_group = ? AND job_name = ?
+				ORDER BY actual_fire_time DESC, id DESC
+				LIMIT 1
+				""", String.class, "plataforma", "rotina-integration-test");
+		for (int index = 0; index < 12; index++) {
+			jdbc.update("""
+					INSERT INTO public.scheduler_execution_log (
+					    fire_instance_id, logged_at, level, log_source, message, details
+					) VALUES (?, ?, 'INFO', 'pagination-test', ?, NULL)
+					""", fireInstanceId, Instant.parse("2030-01-01T00:00:00Z").plusSeconds(index),
+					"pagination-marker-%02d".formatted(index));
+		}
+
+		mockMvc.perform(get("/api/v1/jobs/plataforma/rotina-integration-test/logs/search")
+					.param("page", "0")
+					.param("pageSize", "10")
+					.param("sort", "loggedAt")
+					.param("direction", "asc")
+					.param("query", "pagination-marker"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.page", is(0)))
+				.andExpect(jsonPath("$.pageSize", is(10)))
+				.andExpect(jsonPath("$.totalItems", is(12)))
+				.andExpect(jsonPath("$.totalPages", is(2)))
+				.andExpect(jsonPath("$.items.length()", is(10)))
+				.andExpect(jsonPath("$.items[0].message", is("pagination-marker-00")))
+				.andExpect(jsonPath("$.items[9].message", is("pagination-marker-09")))
+				.andExpect(jsonPath("$.infoCount", is(12)))
+				.andExpect(jsonPath("$.warningCount", is(0)))
+				.andExpect(jsonPath("$.errorCount", is(0)))
+				.andExpect(jsonPath("$.executions[0].fireInstanceId").isNotEmpty());
+
+		mockMvc.perform(get("/api/v1/jobs/plataforma/rotina-integration-test/logs/search")
+					.param("page", "1")
+					.param("pageSize", "10")
+					.param("sort", "loggedAt")
+					.param("direction", "asc")
+					.param("query", "pagination-marker"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.page", is(1)))
+				.andExpect(jsonPath("$.items.length()", is(2)))
+				.andExpect(jsonPath("$.items[0].message", is("pagination-marker-10")))
+				.andExpect(jsonPath("$.items[1].message", is("pagination-marker-11")));
 
 		mockMvc.perform(delete("/api/v1/jobs/plataforma/rotina-integration-test"))
 				.andExpect(status().isNoContent());
@@ -187,6 +263,58 @@ class SchedulerJobApiTests {
 					.content(request))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.title", is("Referência de segredo inválida")));
+	}
+
+	@Test
+	void shouldPersistErrorLogsForFailedExecution() throws Exception {
+		requestReceived = new CountDownLatch(1);
+		String request = """
+				{
+				  "name": "rotina-failure-log-test",
+				  "group": "plataforma",
+				  "description": "Rotina criada para validar logs de erro.",
+				  "type": "HTTP_REQUEST",
+				  "httpRequest": %s,
+				  "durable": true,
+				  "requestsRecovery": false,
+				  "triggers": []
+				}
+				""".formatted(httpConfiguration(
+				"http://127.0.0.1:" + targetServer.getAddress().getPort() + "/failure"));
+
+		mockMvc.perform(post("/api/v1/jobs")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(request))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-failure-log-test/trigger"))
+				.andExpect(status().isOk());
+		if (!requestReceived.await(5, TimeUnit.SECONDS)) {
+			throw new AssertionError("A API HTTP de teste não recebeu a execução que deveria falhar.");
+		}
+
+		String executionLogs = waitForExecutionLog(
+				"plataforma", "rotina-failure-log-test", "\"level\":\"ERROR\"");
+		org.assertj.core.api.Assertions.assertThat(executionLogs)
+				.contains("\"source\":\"http-executor\"")
+				.contains("status HTTP 500")
+				.doesNotContain("\"message\":\"teste\"");
+		waitForExecutionResult("plataforma", "rotina-failure-log-test", "FAILED", 1);
+		mockMvc.perform(get("/api/v1/jobs/plataforma/rotina-failure-log-test"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.executionCounts.successCount", is(0)))
+				.andExpect(jsonPath("$.executionCounts.failureCount", is(1)));
+
+		mockMvc.perform(delete("/api/v1/jobs/plataforma/rotina-failure-log-test"))
+				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	void shouldRejectInvalidExecutionLogOrdering() throws Exception {
+		mockMvc.perform(get("/api/v1/jobs/plataforma/qualquer-rotina/logs/search")
+					.param("sort", "invalid"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.title", is("Ordenação de logs inválida")));
 	}
 
 	@Test
@@ -258,5 +386,34 @@ class SchedulerJobApiTests {
 				  }
 				}
 				""".formatted(url);
+	}
+
+	private String waitForExecutionLog(String group, String name, String expected) throws Exception {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		do {
+			String content = mockMvc.perform(get("/api/v1/jobs/{group}/{name}/logs", group, name))
+					.andExpect(status().isOk())
+					.andReturn().getResponse().getContentAsString();
+			if (content.contains(expected)) return content;
+			Thread.sleep(25);
+		}
+		while (System.nanoTime() < deadline);
+		throw new AssertionError("O log esperado não foi persistido dentro do prazo: " + expected);
+	}
+
+	private void waitForExecutionResult(
+			String group, String name, String result, int expectedCount) throws InterruptedException {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		do {
+			Integer count = jdbc.queryForObject("""
+					SELECT count(*)
+					FROM public.scheduler_execution_history
+					WHERE job_group = ? AND job_name = ? AND result = ?
+					""", Integer.class, group, name, result);
+			if (count != null && count >= expectedCount) return;
+			Thread.sleep(25);
+		}
+		while (System.nanoTime() < deadline);
+		throw new AssertionError("O resultado esperado não foi persistido dentro do prazo: " + result);
 	}
 }

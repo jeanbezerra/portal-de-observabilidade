@@ -1,7 +1,11 @@
 package com.porto.ciops.coa.scheduler.api.jobs.application;
 
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ActiveExecutionResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionCountsResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionHistoryResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogExecutionResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogPageResponse;
+import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionLogResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.ExecutionSummaryResponse;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.scheduler.api.jobs.application.model.JobResponse;
@@ -18,6 +22,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.quartz.CronTrigger;
 import org.quartz.InterruptableJob;
@@ -36,6 +41,7 @@ import org.springframework.stereotype.Service;
 public class SchedulerJobQueryService {
 
 	private static final String NO_CALENDAR = "Sem calendário de exclusão";
+	private static final ExecutionCountsResponse NO_EXECUTIONS = new ExecutionCountsResponse(0, 0);
 
 	private final Scheduler scheduler;
 	private final JdbcTemplate jdbc;
@@ -50,13 +56,16 @@ public class SchedulerJobQueryService {
 
 	public List<JobResponse> listJobs() throws SchedulerException {
 		Map<JobKey, ActiveExecutionResponse> active = loadClusterActiveExecutions();
+		Map<JobKey, ExecutionCountsResponse> executionCounts = loadExecutionCounts();
 		for (JobExecutionContext context : scheduler.getCurrentlyExecutingJobs()) {
 			active.put(context.getJobDetail().getKey(), toActiveExecution(context));
 		}
 
 		List<JobResponse> jobs = new ArrayList<>();
 		for (JobKey key : scheduler.getJobKeys(GroupMatcher.anyJobGroup())) {
-			jobs.add(toJobResponse(scheduler.getJobDetail(key), active.get(key)));
+			jobs.add(toJobResponse(
+					scheduler.getJobDetail(key), active.get(key),
+					executionCounts.getOrDefault(key, NO_EXECUTIONS)));
 		}
 		jobs.sort(Comparator.comparing(JobResponse::group).thenComparing(JobResponse::name));
 		return jobs;
@@ -70,7 +79,7 @@ public class SchedulerJobQueryService {
 				.filter(context -> context.getJobDetail().getKey().equals(key))
 				.map(this::toActiveExecution)
 				.findFirst().orElseGet(() -> loadClusterActiveExecutions().get(key));
-		return toJobResponse(detail, active);
+		return toJobResponse(detail, active, loadExecutionCounts(key));
 	}
 
 	public List<ExecutionHistoryResponse> listExecutions(int limit) {
@@ -85,6 +94,80 @@ public class SchedulerJobQueryService {
 				""", SchedulerJobQueryService::mapExecution, safeLimit);
 	}
 
+	public List<ExecutionLogResponse> listExecutionLogs(String group, String name, int limit) {
+		int safeLimit = Math.max(1, Math.min(limit, 1_000));
+		return jdbc.query("""
+				SELECT log.id, log.fire_instance_id, log.logged_at, log.level,
+				       log.log_source, log.message, log.details
+				FROM public.scheduler_execution_log log
+				JOIN public.scheduler_execution_history history
+				  ON history.fire_instance_id = log.fire_instance_id
+				WHERE history.job_group = ? AND history.job_name = ?
+				ORDER BY log.logged_at DESC, log.id DESC
+				LIMIT ?
+				""", SchedulerJobQueryService::mapExecutionLog, group, name, safeLimit);
+	}
+
+	public ExecutionLogPageResponse searchExecutionLogs(
+			String group,
+			String name,
+			int page,
+			int pageSize,
+			String sort,
+			String direction,
+			String level,
+			String fireInstanceId,
+			String query) {
+		int safePageSize = Math.max(10, Math.min(pageSize, 100));
+		String normalizedLevel = normalizeLogLevel(level);
+		String normalizedQuery = normalizeLogQuery(query);
+		String orderBy = executionLogOrder(sort, direction);
+
+		ExecutionLogFilter pageFilter = executionLogFilter(
+				group, name, fireInstanceId, normalizedQuery, normalizedLevel);
+
+		Long totalValue = jdbc.queryForObject(
+				"SELECT count(*) " + pageFilter.sql(), Long.class, pageFilter.arguments().toArray());
+		long totalItems = totalValue == null ? 0 : totalValue;
+		int totalPages = totalItems == 0
+				? 0
+				: (int) Math.min(Integer.MAX_VALUE, (totalItems + safePageSize - 1) / safePageSize);
+		int safePage = totalPages == 0 ? 0 : Math.max(0, Math.min(page, totalPages - 1));
+
+		List<Object> pageArguments = new ArrayList<>(pageFilter.arguments());
+		pageArguments.add(safePageSize);
+		pageArguments.add((long) safePage * safePageSize);
+		List<ExecutionLogResponse> items = jdbc.query("""
+				SELECT log.id, log.fire_instance_id, log.logged_at, log.level,
+				       log.log_source, log.message, log.details
+				""" + pageFilter.sql() + orderBy + " LIMIT ? OFFSET ?",
+				SchedulerJobQueryService::mapExecutionLog, pageArguments.toArray());
+
+		Map<String, Long> counts = new HashMap<>();
+		jdbc.query("SELECT log.level, count(*) AS log_count " + pageFilter.sql() + " GROUP BY log.level",
+				(resultSet, rowNumber) -> new LogLevelCount(
+						resultSet.getString("level"), resultSet.getLong("log_count")),
+				pageFilter.arguments().toArray())
+				.forEach(count -> counts.put(count.level(), count.count()));
+
+		List<ExecutionLogExecutionResponse> executions = jdbc.query("""
+				SELECT history.fire_instance_id, history.actual_fire_time, history.result,
+				       count(log.id) AS log_count
+				FROM public.scheduler_execution_history history
+				JOIN public.scheduler_execution_log log
+				  ON log.fire_instance_id = history.fire_instance_id
+				WHERE history.job_group = ? AND history.job_name = ?
+				GROUP BY history.id, history.fire_instance_id, history.actual_fire_time, history.result
+				ORDER BY history.actual_fire_time DESC, history.id DESC
+				LIMIT 200
+				""", SchedulerJobQueryService::mapExecutionLogExecution, group, name);
+
+		return new ExecutionLogPageResponse(
+				items, safePage, safePageSize, totalItems, totalPages,
+				counts.getOrDefault("INFO", 0L), counts.getOrDefault("WARN", 0L),
+				counts.getOrDefault("ERROR", 0L), executions);
+	}
+
 	TriggerResponse getTrigger(TriggerKey key) throws SchedulerException {
 		Trigger trigger = scheduler.getTrigger(key);
 		if (trigger == null) {
@@ -94,7 +177,10 @@ public class SchedulerJobQueryService {
 		return toTriggerResponse(trigger, loadTriggerMetadata(key));
 	}
 
-	private JobResponse toJobResponse(JobDetail detail, ActiveExecutionResponse activeExecution) throws SchedulerException {
+	private JobResponse toJobResponse(
+			JobDetail detail,
+			ActiveExecutionResponse activeExecution,
+			ExecutionCountsResponse executionCounts) throws SchedulerException {
 		JobKey key = detail.getKey();
 		JobMetadata metadata = loadJobMetadata(key);
 		List<TriggerResponse> triggers = scheduler.getTriggersOfJob(key).stream()
@@ -123,7 +209,7 @@ public class SchedulerJobQueryService {
 				key.getGroup() + "." + key.getName(), key.getName(), key.getGroup(),
 				metadata == null ? nullToEmpty(detail.getDescription()) : metadata.description(), jobType, httpRequest,
 				detail.isDurable(), detail.requestsRecovery(), disallowConcurrent, persistJobData, interruptable,
-				triggers, activeExecution, loadLastExecution(key));
+				triggers, activeExecution, executionCounts, loadLastExecution(key));
 	}
 
 	private TriggerResponse toTriggerResponse(Trigger trigger, TriggerMetadata metadata) throws SchedulerException {
@@ -188,6 +274,37 @@ public class SchedulerJobQueryService {
 		return summaries.isEmpty()
 				? new ExecutionSummaryResponse("NONE", null, 0, "Nenhuma execução registrada.")
 				: summaries.getFirst();
+	}
+
+	private Map<JobKey, ExecutionCountsResponse> loadExecutionCounts() {
+		Map<JobKey, ExecutionCountsResponse> counts = new HashMap<>();
+		jdbc.query("""
+				SELECT job_group, job_name,
+				       SUM(CASE WHEN result = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count,
+				       SUM(CASE WHEN result = 'FAILED' THEN 1 ELSE 0 END) AS failure_count
+				FROM public.scheduler_execution_history
+				WHERE result IN ('SUCCESS', 'FAILED')
+				GROUP BY job_group, job_name
+				""", resultSet -> {
+			counts.put(
+					JobKey.jobKey(resultSet.getString("job_name"), resultSet.getString("job_group")),
+					new ExecutionCountsResponse(
+							resultSet.getLong("success_count"), resultSet.getLong("failure_count")));
+		});
+		return counts;
+	}
+
+	private ExecutionCountsResponse loadExecutionCounts(JobKey key) {
+		List<ExecutionCountsResponse> counts = jdbc.query("""
+				SELECT SUM(CASE WHEN result = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count,
+				       SUM(CASE WHEN result = 'FAILED' THEN 1 ELSE 0 END) AS failure_count
+				FROM public.scheduler_execution_history
+				WHERE job_group = ? AND job_name = ?
+				  AND result IN ('SUCCESS', 'FAILED')
+				""", (resultSet, rowNumber) -> new ExecutionCountsResponse(
+				resultSet.getLong("success_count"), resultSet.getLong("failure_count")),
+				key.getGroup(), key.getName());
+		return counts.isEmpty() ? NO_EXECUTIONS : counts.getFirst();
 	}
 
 	private JobMetadata loadJobMetadata(JobKey key) {
@@ -326,6 +443,90 @@ public class SchedulerJobQueryService {
 				resultSet.getBoolean("interruption_requested"));
 	}
 
+	private static ExecutionLogResponse mapExecutionLog(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new ExecutionLogResponse(
+				resultSet.getLong("id"), resultSet.getString("fire_instance_id"),
+				instant(resultSet, "logged_at"), resultSet.getString("level"),
+				resultSet.getString("log_source"), resultSet.getString("message"),
+				resultSet.getString("details"));
+	}
+
+	private static ExecutionLogExecutionResponse mapExecutionLogExecution(
+			ResultSet resultSet, int rowNumber) throws SQLException {
+		return new ExecutionLogExecutionResponse(
+				resultSet.getString("fire_instance_id"), instant(resultSet, "actual_fire_time"),
+				resultSet.getString("result"), resultSet.getLong("log_count"));
+	}
+
+	private static ExecutionLogFilter executionLogFilter(
+			String group,
+			String name,
+			String fireInstanceId,
+			String query,
+			String level) {
+		StringBuilder sql = new StringBuilder("""
+				FROM public.scheduler_execution_log log
+				JOIN public.scheduler_execution_history history
+				  ON history.fire_instance_id = log.fire_instance_id
+				WHERE history.job_group = ? AND history.job_name = ?
+				""");
+		List<Object> arguments = new ArrayList<>();
+		arguments.add(group);
+		arguments.add(name);
+		if (fireInstanceId != null && !fireInstanceId.isBlank()) {
+			sql.append(" AND log.fire_instance_id = ?");
+			arguments.add(fireInstanceId.trim());
+		}
+		if (query != null && !query.isBlank()) {
+			sql.append("""
+					 AND POSITION(LOWER(?) IN LOWER(
+					     log.fire_instance_id || ' ' || log.level || ' ' || log.log_source || ' '
+					     || log.message || ' ' || COALESCE(log.details, '')
+					 )) > 0
+					""");
+			arguments.add(query);
+		}
+		if (level != null) {
+			sql.append(" AND log.level = ?");
+			arguments.add(level);
+		}
+		return new ExecutionLogFilter(sql.toString(), List.copyOf(arguments));
+	}
+
+	private static String executionLogOrder(String sort, String direction) {
+		String safeDirection = switch (direction == null ? "desc" : direction.toLowerCase(Locale.ROOT)) {
+			case "asc" -> "ASC";
+			case "desc" -> "DESC";
+			default -> throw ApplicationProblemException.invalidInput(
+					"Direção de ordenação inválida", "Use asc ou desc para ordenar os logs.");
+		};
+		String expression = switch (sort == null ? "loggedAt" : sort) {
+			case "loggedAt" -> "log.logged_at";
+			case "level" -> "CASE log.level WHEN 'ERROR' THEN 3 WHEN 'WARN' THEN 2 ELSE 1 END";
+			case "source" -> "LOWER(log.log_source)";
+			case "execution" -> "history.actual_fire_time";
+			default -> throw ApplicationProblemException.invalidInput(
+					"Ordenação de logs inválida", "Use loggedAt, level, source ou execution.");
+		};
+		return " ORDER BY " + expression + " " + safeDirection + ", log.logged_at DESC, log.id DESC";
+	}
+
+	private static String normalizeLogLevel(String level) {
+		if (level == null || level.isBlank() || "ALL".equalsIgnoreCase(level)) return null;
+		String normalized = level.toUpperCase(Locale.ROOT);
+		if (!List.of("INFO", "WARN", "ERROR").contains(normalized)) {
+			throw ApplicationProblemException.invalidInput(
+					"Nível de log inválido", "Use INFO, WARN ou ERROR para filtrar os logs.");
+		}
+		return normalized;
+	}
+
+	private static String normalizeLogQuery(String query) {
+		if (query == null || query.isBlank()) return null;
+		String normalized = query.trim();
+		return normalized.length() > 200 ? normalized.substring(0, 200) : normalized;
+	}
+
 	private record JobMetadata(
 			String description,
 			String jobType,
@@ -341,5 +542,11 @@ public class SchedulerJobQueryService {
 			String timeZone,
 			String calendar,
 			String misfireInstruction) {
+	}
+
+	private record ExecutionLogFilter(String sql, List<Object> arguments) {
+	}
+
+	private record LogLevelCount(String level, long count) {
 	}
 }

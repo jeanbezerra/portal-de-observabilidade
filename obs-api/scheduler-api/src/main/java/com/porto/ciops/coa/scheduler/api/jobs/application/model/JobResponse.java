@@ -16,5 +16,6 @@ public record JobResponse(
 		boolean interruptable,
 		List<TriggerResponse> triggers,
 		ActiveExecutionResponse activeExecution,
+		ExecutionCountsResponse executionCounts,
 		ExecutionSummaryResponse lastExecution) {
 }

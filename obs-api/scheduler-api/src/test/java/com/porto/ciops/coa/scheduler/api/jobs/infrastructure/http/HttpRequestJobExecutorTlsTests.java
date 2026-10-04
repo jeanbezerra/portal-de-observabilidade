@@ -52,7 +52,7 @@ class HttpRequestJobExecutorTlsTests {
 
 	@Test
 	void shouldUseInsecureTlsOnlyWhenExplicitlyEnabled() throws Exception {
-		HttpRequestJobExecutor executor = new HttpRequestJobExecutor(null, null, null, "*");
+		HttpRequestJobExecutor executor = new HttpRequestJobExecutor(null, null, null, null, "*");
 		URI uri = URI.create("https://127.0.0.1:" + targetServer.getAddress().getPort() + "/health");
 		HttpRequest request = HttpRequest.newBuilder(uri).GET().build();
 

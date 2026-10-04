@@ -181,10 +181,11 @@ type WireExecution = Omit<
 
 type WireJob = Omit<
   ScheduledJob,
-  "triggers" | "activeExecution" | "lastExecution"
+  "triggers" | "activeExecution" | "executionCounts" | "lastExecution"
 > & {
   triggers: WireTrigger[];
   activeExecution: WireExecution | null;
+  executionCounts?: ScheduledJob["executionCounts"];
   lastExecution: {
     result: ScheduledJob["lastExecution"]["result"];
     finishedAt: string | null;
@@ -241,6 +242,10 @@ function mapTrigger(trigger: WireTrigger): JobTrigger {
 function mapJob(job: WireJob): ScheduledJob {
   return {
     ...job,
+    executionCounts: job.executionCounts ?? {
+      successCount: 0,
+      failureCount: 0,
+    },
     triggers: job.triggers.map(mapTrigger),
     activeExecution: job.activeExecution
       ? {
@@ -415,4 +420,78 @@ export type ExecutionHistoryEntry = {
 
 export function listExecutionHistory(limit = 200) {
   return request<ExecutionHistoryEntry[]>(`/executions?limit=${limit}`);
+}
+
+export type ExecutionLogEntry = {
+  id: number;
+  fireInstanceId: string;
+  loggedAt: string;
+  level: "INFO" | "WARN" | "ERROR";
+  source: string;
+  message: string;
+  details: string | null;
+};
+
+export function listJobExecutionLogs(
+  group: string,
+  name: string,
+  limit = 500,
+) {
+  return request<ExecutionLogEntry[]>(
+    `/jobs/${encodeURIComponent(group)}/${encodeURIComponent(name)}/logs?limit=${limit}`,
+  );
+}
+
+export type ExecutionLogSort = "loggedAt" | "level" | "source" | "execution";
+export type ExecutionLogDirection = "asc" | "desc";
+
+export type ExecutionLogExecution = {
+  fireInstanceId: string;
+  actualFireTime: string;
+  result: ExecutionHistoryEntry["result"];
+  logCount: number;
+};
+
+export type ExecutionLogPage = {
+  items: ExecutionLogEntry[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  infoCount: number;
+  warningCount: number;
+  errorCount: number;
+  executions: ExecutionLogExecution[];
+};
+
+export type ExecutionLogSearch = {
+  page: number;
+  pageSize: number;
+  sort: ExecutionLogSort;
+  direction: ExecutionLogDirection;
+  level: "ALL" | ExecutionLogEntry["level"];
+  fireInstanceId: string;
+  query: string;
+};
+
+export function searchJobExecutionLogs(
+  group: string,
+  name: string,
+  search: ExecutionLogSearch,
+  signal?: AbortSignal,
+) {
+  const parameters = new URLSearchParams({
+    page: String(search.page),
+    pageSize: String(search.pageSize),
+    sort: search.sort,
+    direction: search.direction,
+    level: search.level,
+    fireInstanceId: search.fireInstanceId,
+    query: search.query,
+  });
+
+  return request<ExecutionLogPage>(
+    `/jobs/${encodeURIComponent(group)}/${encodeURIComponent(name)}/logs/search?${parameters.toString()}`,
+    { signal },
+  );
 }

@@ -1,0 +1,1 @@
+nesta tela "/administracao/agendamentos/rotinas-agendadas" na tabela de Rotinas, preciso que você adicione uma coluna que contabiliza a quantidade de vezes que aquela rotina executou com sucesso e com erro
