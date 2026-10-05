@@ -4,6 +4,7 @@ import com.porto.ciops.coa.obs.scheduler.administration.application.Administrati
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionHistoryResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogPageResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogResponse;
+import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogSearchCriteria;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobResponse;
@@ -30,6 +31,7 @@ import org.quartz.TriggerKey;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -287,17 +289,8 @@ public class SchedulerJobService {
 	}
 
 	public ExecutionLogPageResponse searchExecutionLogs(
-			String group,
-			String name,
-			int page,
-			int pageSize,
-			String sort,
-			String direction,
-			String level,
-			String fireInstanceId,
-			String query) {
-		return queries.searchExecutionLogs(
-				group, name, page, pageSize, sort, direction, level, fireInstanceId, query);
+			String group, String name, ExecutionLogSearchCriteria criteria) {
+		return queries.searchExecutionLogs(group, name, criteria);
 	}
 
 	private void insertMetadata(JobRequest request) {
@@ -346,7 +339,7 @@ public class SchedulerJobService {
 		try {
 			return objectMapper.writeValueAsString(configuration);
 		}
-		catch (Exception exception) {
+		catch (JacksonException exception) {
 			throw new IllegalStateException("Não foi possível serializar a configuração HTTP.", exception);
 		}
 	}

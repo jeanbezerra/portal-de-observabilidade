@@ -97,6 +97,8 @@ class HttpRequestJobExecutorTlsTests {
 				null);
 	}
 
+	// The TLS context must keep production-grade randomness in this integration test.
+	@SuppressWarnings("java:S5977")
 	private static SSLContext serverSslContext() throws Exception {
 		KeyStore keyStore = KeyStore.getInstance("PKCS12");
 		try (var input = Files.newInputStream(temporaryDirectory.resolve("server.p12"))) {

@@ -13,17 +13,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Compatibility-only job classes for definitions persisted before HTTP_REQUEST.
  * They are not exposed by the catalog and no new job can be created with them.
- *
- * @deprecated retained only so Quartz can deserialize legacy persisted job class names
  */
-@Deprecated(forRemoval = true)
-@SuppressWarnings({"java:S1133", "PMD.MissingStaticMethodInNonInstantiatableClass"})
-public final class ManagedJobs {
+public interface ManagedJobs {
 
-	private ManagedJobs() {
-	}
-
-	public static class ManagedJob implements InterruptableJob {
+	class ManagedJob implements InterruptableJob {
 
 		private static final Logger LOGGER = LoggerFactory.getLogger(ManagedJob.class);
 		private final AtomicBoolean interruptionRequested = new AtomicBoolean();
@@ -45,15 +38,15 @@ public final class ManagedJobs {
 	}
 
 	@DisallowConcurrentExecution
-	public static class NonConcurrentManagedJob extends ManagedJob {
+	class NonConcurrentManagedJob extends ManagedJob {
 	}
 
 	@PersistJobDataAfterExecution
-	public static class PersistentManagedJob extends ManagedJob {
+	class PersistentManagedJob extends ManagedJob {
 	}
 
 	@DisallowConcurrentExecution
 	@PersistJobDataAfterExecution
-	public static class NonConcurrentPersistentManagedJob extends ManagedJob {
+	class NonConcurrentPersistentManagedJob extends ManagedJob {
 	}
 }

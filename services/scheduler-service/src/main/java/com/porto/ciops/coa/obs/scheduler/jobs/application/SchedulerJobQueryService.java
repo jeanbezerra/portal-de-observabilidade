@@ -6,6 +6,7 @@ import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionHistory
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogExecutionResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogPageResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogResponse;
+import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogSearchCriteria;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionSummaryResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobResponse;
@@ -42,9 +43,11 @@ import org.quartz.impl.matchers.GroupMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
 
 @Service
 public class SchedulerJobQueryService {
@@ -165,24 +168,16 @@ public class SchedulerJobQueryService {
 	}
 
 	public ExecutionLogPageResponse searchExecutionLogs(
-			String group,
-			String name,
-			int page,
-			int pageSize,
-			String sort,
-			String direction,
-			String level,
-			String fireInstanceId,
-			String query) {
-		int safePageSize = Math.clamp(pageSize, 10, 100);
-		String normalizedLevel = normalizeLogLevel(level);
-		String normalizedQuery = normalizeLogQuery(query);
-		String normalizedSort = normalizeLogSort(sort);
-		String normalizedDirection = normalizeLogDirection(direction);
+			String group, String name, ExecutionLogSearchCriteria criteria) {
+		int safePageSize = Math.clamp(criteria.pageSize(), 10, 100);
+		String normalizedLevel = normalizeLogLevel(criteria.level());
+		String normalizedQuery = normalizeLogQuery(criteria.query());
+		String normalizedSort = normalizeLogSort(criteria.sort());
+		String normalizedDirection = normalizeLogDirection(criteria.direction());
 		MapSqlParameterSource parameters = new MapSqlParameterSource()
 				.addValue("jobGroup", group)
 				.addValue("jobName", name)
-				.addValue("fireInstanceId", normalizeOptional(fireInstanceId), Types.VARCHAR)
+				.addValue("fireInstanceId", normalizeOptional(criteria.fireInstanceId()), Types.VARCHAR)
 				.addValue("query", normalizedQuery, Types.VARCHAR)
 				.addValue(LOG_LEVEL_COLUMN, normalizedLevel, Types.VARCHAR)
 				.addValue("sort", normalizedSort)
@@ -193,7 +188,7 @@ public class SchedulerJobQueryService {
 		int totalPages = totalItems == 0
 				? 0
 				: (int) Math.min(Integer.MAX_VALUE, (totalItems + safePageSize - 1) / safePageSize);
-		int safePage = totalPages == 0 ? 0 : Math.clamp(page, 0, totalPages - 1);
+		int safePage = totalPages == 0 ? 0 : Math.clamp(criteria.page(), 0, totalPages - 1);
 
 		parameters.addValue("limit", safePageSize);
 		parameters.addValue("offset", (long) safePage * safePageSize);
@@ -300,21 +295,24 @@ public class SchedulerJobQueryService {
 				FROM public.qrtz_fired_triggers
 				WHERE sched_name = ? AND job_name IS NOT NULL AND job_group IS NOT NULL
 				ORDER BY fired_time DESC
-				""", (ResultSet resultSet) -> {
+				""", (RowCallbackHandler) (ResultSet resultSet) -> {
 			JobKey key = JobKey.jobKey(resultSet.getString(JOB_NAME_COLUMN), resultSet.getString(JOB_GROUP_COLUMN));
 			if (active.containsKey(key)) return;
-			String fireInstanceId = resultSet.getString("entry_id");
-			String instance = resultSet.getString("instance_name");
-			Instant firedAt = Instant.ofEpochMilli(resultSet.getLong("fired_time"));
-			long scheduledAtValue = resultSet.getLong("sched_time");
-			Instant scheduledAt = resultSet.wasNull() ? null : Instant.ofEpochMilli(scheduledAtValue);
-			active.put(key, new ActiveExecutionResponse(
-					isInterruptionRequested(fireInstanceId) ? "INTERRUPTION_REQUESTED" : "RUNNING",
-					fireInstanceId, instance, instance, scheduledAt, firedAt,
-					Math.max(0, Duration.between(firedAt, Instant.now()).toMillis()), 0,
-					Scheduler.DEFAULT_RECOVERY_GROUP.equals(resultSet.getString("trigger_group"))));
+			active.put(key, mapClusterActiveExecution(resultSet));
 		}, schedulerName());
 		return active;
+	}
+
+	private ActiveExecutionResponse mapClusterActiveExecution(ResultSet resultSet) throws SQLException {
+		String fireInstanceId = resultSet.getString("entry_id");
+		String instance = resultSet.getString("instance_name");
+		Instant firedAt = Instant.ofEpochMilli(resultSet.getLong("fired_time"));
+		long scheduledAtValue = resultSet.getLong("sched_time");
+		Instant scheduledAt = resultSet.wasNull() ? null : Instant.ofEpochMilli(scheduledAtValue);
+		return new ActiveExecutionResponse(isInterruptionRequested(fireInstanceId)
+				? "INTERRUPTION_REQUESTED" : "RUNNING", fireInstanceId, instance, instance, scheduledAt, firedAt,
+				Math.max(0, Duration.between(firedAt, Instant.now()).toMillis()), 0,
+				Scheduler.DEFAULT_RECOVERY_GROUP.equals(resultSet.getString("trigger_group")));
 	}
 
 	private ExecutionSummaryResponse loadLastExecution(JobKey key) {
@@ -334,6 +332,10 @@ public class SchedulerJobQueryService {
 
 	private Map<JobKey, ExecutionCountsResponse> loadExecutionCounts() {
 		Map<JobKey, ExecutionCountsResponse> counts = new HashMap<>();
+		RowCallbackHandler collectCount = resultSet -> counts.put(
+				JobKey.jobKey(resultSet.getString(JOB_NAME_COLUMN), resultSet.getString(JOB_GROUP_COLUMN)),
+				new ExecutionCountsResponse(
+						resultSet.getLong("success_count"), resultSet.getLong("failure_count")));
 		jdbc.query("""
 				SELECT job_group, job_name,
 				       SUM(CASE WHEN result = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count,
@@ -341,10 +343,7 @@ public class SchedulerJobQueryService {
 				FROM public.scheduler_execution_history
 				WHERE result IN ('SUCCESS', 'FAILED')
 				GROUP BY job_group, job_name
-				""", (ResultSet resultSet) -> counts.put(
-					JobKey.jobKey(resultSet.getString(JOB_NAME_COLUMN), resultSet.getString(JOB_GROUP_COLUMN)),
-					new ExecutionCountsResponse(
-							resultSet.getLong("success_count"), resultSet.getLong("failure_count"))));
+				""", collectCount);
 		return counts;
 	}
 
@@ -379,7 +378,7 @@ public class SchedulerJobQueryService {
 		try {
 			return objectMapper.readValue(value, HttpRequestConfiguration.class);
 		}
-		catch (Exception exception) {
+		catch (JacksonException exception) {
 			throw new IllegalStateException("A configuração HTTP armazenada é inválida.", exception);
 		}
 	}
@@ -447,7 +446,7 @@ public class SchedulerJobQueryService {
 
 	private static String deriveTimeZone(Trigger trigger) {
 		if (trigger instanceof CronTrigger cron) return cron.getTimeZone().getID();
-		if (trigger instanceof org.quartz.CalendarIntervalTrigger calendar) return calendar.getTimeZone().getID();
+		if (trigger instanceof CalendarIntervalTrigger calendar) return calendar.getTimeZone().getID();
 		return ZoneId.systemDefault().getId();
 	}
 

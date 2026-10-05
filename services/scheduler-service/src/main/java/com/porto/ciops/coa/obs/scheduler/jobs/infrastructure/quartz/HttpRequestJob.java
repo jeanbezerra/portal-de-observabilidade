@@ -1,6 +1,7 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.infrastructure.quartz;
 
 import com.porto.ciops.coa.obs.scheduler.jobs.infrastructure.http.HttpRequestJobExecutor;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.InterruptableJob;
@@ -25,11 +26,7 @@ public class HttpRequestJob implements InterruptableJob {
 		try {
 			context.setResult(executor.execute(context.getJobDetail().getKey(), context.getFireInstanceId()));
 		}
-		catch (InterruptedException exception) {
-			Thread.currentThread().interrupt();
-			throw new JobExecutionException("A requisição HTTP foi interrompida.", exception, false);
-		}
-		catch (Exception exception) {
+		catch (IOException | RuntimeException exception) {
 			throw new JobExecutionException(safeMessage(exception), exception, false);
 		}
 		finally {

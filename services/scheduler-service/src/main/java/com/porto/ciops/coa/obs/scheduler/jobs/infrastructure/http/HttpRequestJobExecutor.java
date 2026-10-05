@@ -27,6 +27,7 @@ import org.quartz.JobKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -37,6 +38,8 @@ public class HttpRequestJobExecutor {
 	private static final String LOG_SOURCE = "http-executor";
 	private static final String STATUS_HTTP_PREFIX = "Status HTTP: ";
 	private static final String CONTENT_TYPE_HEADER = "Content-Type";
+	private static final String API_KEY_QUERY_LOCATION = "QUERY";
+	private static final String OAUTH_REQUEST_BODY = "REQUEST_BODY";
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
 	private final EnvironmentSecretResolver secrets;
@@ -58,10 +61,14 @@ public class HttpRequestJobExecutor {
 		this.allowInsecureTls = allowInsecureTls;
 	}
 
-	public String execute(JobKey key, String fireInstanceId) throws IOException, InterruptedException {
+	public String execute(JobKey key, String fireInstanceId) throws IOException {
 		HttpRequestConfiguration configuration = loadConfiguration(key);
 		try (HttpClient client = buildClient(configuration)) {
 			return execute(client, configuration, fireInstanceId);
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IOException("A requisição HTTP foi interrompida.", exception);
 		}
 	}
 
@@ -98,18 +105,10 @@ public class HttpRequestJobExecutor {
 							STATUS_HTTP_PREFIX + response.statusCode() + "\nNova tentativa em: " + delayMillis + " ms");
 					delay(delayMillis);
 					delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
-					continue;
 				}
-				if (!isExpectedStatus(response.statusCode(), configuration.expectedStatusCodes())) {
-					UnexpectedHttpStatusException failure = new UnexpectedHttpStatusException(response.statusCode());
-					executionLogs.error(fireInstanceId, LOG_SOURCE, failure.getMessage(), failure);
-					throw failure;
+				else {
+					return completeResponse(configuration, response, responseBody, attempt, fireInstanceId);
 				}
-				executionLogs.info(fireInstanceId, LOG_SOURCE, "Requisição HTTP concluída com sucesso.",
-						STATUS_HTTP_PREFIX + response.statusCode() + "\nBytes recebidos: " + responseBody.length
-								+ "\nTentativa: " + attempt + " de " + retry.maxAttempts());
-				return "HTTP " + response.statusCode() + " · " + responseBody.length
-						+ " bytes recebidos · tentativa " + attempt + " de " + retry.maxAttempts() + ".";
 			}
 			catch (UnexpectedHttpStatusException exception) {
 				throw exception;
@@ -126,18 +125,33 @@ public class HttpRequestJobExecutor {
 				if (attempt == retry.maxAttempts()) {
 					executionLogs.error(fireInstanceId, LOG_SOURCE,
 							"A requisição HTTP falhou após " + attempt + " tentativa(s).", failure);
-					break;
 				}
-				executionLogs.warn(fireInstanceId, LOG_SOURCE,
-						"A tentativa falhou e será repetida.",
-						failure.getClass().getSimpleName() + ": " + failure.getMessage()
-								+ "\nNova tentativa em: " + delayMillis + " ms");
-				delay(delayMillis);
-				delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
+				else {
+					executionLogs.warn(fireInstanceId, LOG_SOURCE,
+							"A tentativa falhou e será repetida.",
+							failure.getClass().getSimpleName() + ": " + failure.getMessage()
+									+ "\nNova tentativa em: " + delayMillis + " ms");
+					delay(delayMillis);
+					delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
+				}
 			}
 		}
 
 		throw lastIoFailure == null ? new IOException("A requisição HTTP não foi concluída.") : lastIoFailure;
+	}
+
+	private String completeResponse(HttpRequestConfiguration configuration, HttpResponse<InputStream> response,
+			byte[] responseBody, int attempt, String fireInstanceId) throws UnexpectedHttpStatusException {
+		if (!isExpectedStatus(response.statusCode(), configuration.expectedStatusCodes())) {
+			UnexpectedHttpStatusException failure = new UnexpectedHttpStatusException(response.statusCode());
+			executionLogs.error(fireInstanceId, LOG_SOURCE, failure.getMessage(), failure);
+			throw failure;
+		}
+		executionLogs.info(fireInstanceId, LOG_SOURCE, "Requisição HTTP concluída com sucesso.",
+				STATUS_HTTP_PREFIX + response.statusCode() + "\nBytes recebidos: " + responseBody.length
+						+ "\nTentativa: " + attempt + " de " + configuration.retry().maxAttempts());
+		return "HTTP " + response.statusCode() + " · " + responseBody.length
+				+ " bytes recebidos · tentativa " + attempt + " de " + configuration.retry().maxAttempts() + ".";
 	}
 
 	private HttpRequestConfiguration loadConfiguration(JobKey key) {
@@ -152,7 +166,7 @@ public class HttpRequestJobExecutor {
 		try {
 			return objectMapper.readValue(rows.getFirst(), HttpRequestConfiguration.class);
 		}
-		catch (Exception exception) {
+		catch (JacksonException exception) {
 			throw new IllegalStateException("A definição HTTP armazenada é inválida.", exception);
 		}
 	}
@@ -217,18 +231,20 @@ public class HttpRequestJobExecutor {
 					(authentication.username() + ":" + secrets.resolve(authentication.passwordSecretRef()))
 							.getBytes(StandardCharsets.UTF_8));
 			case "BEARER" -> "Bearer " + secrets.resolve(authentication.tokenSecretRef());
-			case "API_KEY" -> {
-				if ("QUERY".equals(authentication.apiKeyLocation())) {
-					queryParameters.add(new HttpRequestParameter(authentication.apiKeyName(), null,
-							authentication.tokenSecretRef()));
-					yield null;
-				}
-				yield null;
-			}
+			case "API_KEY" -> resolveApiKeyAuthentication(authentication, queryParameters);
 			case "OAUTH2_CLIENT_CREDENTIALS" -> requestOAuthToken(
 					client, configuration, authentication, fireInstanceId);
 			default -> throw new IllegalStateException("Tipo de autenticação HTTP não suportado.");
 		};
+	}
+
+	private static String resolveApiKeyAuthentication(
+			HttpAuthentication authentication, List<HttpRequestParameter> queryParameters) {
+		if (API_KEY_QUERY_LOCATION.equals(authentication.apiKeyLocation())) {
+			queryParameters.add(new HttpRequestParameter(
+					authentication.apiKeyName(), null, authentication.tokenSecretRef()));
+		}
+		return null;
 	}
 
 	private String requestOAuthToken(HttpClient client, HttpRequestConfiguration configuration,
@@ -251,7 +267,7 @@ public class HttpRequestJobExecutor {
 				.timeout(Duration.ofSeconds(configuration.requestTimeoutSeconds()))
 				.header("Accept", "application/json")
 				.header(CONTENT_TYPE_HEADER, "application/x-www-form-urlencoded");
-		if ("REQUEST_BODY".equals(authentication.clientAuthenticationMethod())) {
+		if (OAUTH_REQUEST_BODY.equals(authentication.clientAuthenticationMethod())) {
 			tokenParameters.add(new HttpRequestParameter("client_id", authentication.clientId(), null));
 			tokenParameters.add(new HttpRequestParameter("client_secret",
 					secrets.resolve(authentication.clientSecretRef()), null));
@@ -283,8 +299,13 @@ public class HttpRequestJobExecutor {
 		int fragmentIndex = rawUrl.indexOf('#');
 		String fragment = fragmentIndex >= 0 ? rawUrl.substring(fragmentIndex) : "";
 		String base = fragmentIndex >= 0 ? rawUrl.substring(0, fragmentIndex) : rawUrl;
-		String separator = base.contains("?") ? (base.endsWith("?") || base.endsWith("&") ? "" : "&") : "?";
+		String separator = querySeparator(base);
 		return URI.create(base + separator + encodeParameters(parameters) + fragment);
+	}
+
+	private static String querySeparator(String url) {
+		if (!url.contains("?")) return "?";
+		return url.endsWith("?") || url.endsWith("&") ? "" : "&";
 	}
 
 	private String encodeParameters(List<HttpRequestParameter> parameters) {
@@ -303,8 +324,8 @@ public class HttpRequestJobExecutor {
 			throw new IllegalStateException("O destino HTTP não possui um host válido.");
 		}
 		String host = uri.getHost().toLowerCase(Locale.ROOT);
-		boolean allowed = allowedHosts.stream().anyMatch(pattern -> "*".equals(pattern)
-				|| host.equals(pattern) || (pattern.startsWith("*.") && host.endsWith(pattern.substring(1))));
+		boolean allowed = allowedHosts.stream().anyMatch(pattern -> "*".equals(pattern) || host.equals(pattern)
+				|| (pattern.startsWith("*.") && host.endsWith(pattern.substring(1))));
 		if (!allowed) throw new IllegalStateException("O host " + host + " não está autorizado para execução HTTP.");
 	}
 
@@ -332,7 +353,7 @@ public class HttpRequestJobExecutor {
 	}
 
 	private static boolean isExpectedStatus(int status, List<Integer> expectedStatuses) {
-		return expectedStatuses.isEmpty() ? status >= 200 && status <= 299 : expectedStatuses.contains(status);
+		return expectedStatuses.isEmpty() ? (status >= 200 && status <= 299) : expectedStatuses.contains(status);
 	}
 
 	private static long nextDelay(long currentDelay, double multiplier) {

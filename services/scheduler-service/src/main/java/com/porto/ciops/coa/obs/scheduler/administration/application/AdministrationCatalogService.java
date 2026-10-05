@@ -16,7 +16,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.zone.ZoneRulesException;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -286,7 +285,7 @@ public class AdministrationCatalogService {
 		HolidayCalendar calendar = new HolidayCalendar();
 		calendar.setDescription(MANAGED_HOLIDAY_CALENDAR_DESCRIPTION);
 		for (LocalDate date : excludedDates) {
-			calendar.addExcludedDate(Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+			calendar.addExcludedDate(Timestamp.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
 		}
 		scheduler.addCalendar(calendarName, calendar, true, true);
 	}
@@ -387,7 +386,7 @@ public class AdministrationCatalogService {
 	}
 
 	private static String normalizeRequestedId(String id, String prefix) {
-		return (id == null || id.isBlank()) ? prefix + UUID.randomUUID() : id.trim();
+		return (id == null || id.isBlank()) ? (prefix + UUID.randomUUID()) : id.trim();
 	}
 
 	private static void validateCalendarLocation(String scope, String location) {

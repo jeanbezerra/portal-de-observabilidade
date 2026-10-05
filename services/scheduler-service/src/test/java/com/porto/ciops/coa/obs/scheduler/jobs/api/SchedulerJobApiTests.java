@@ -1,6 +1,7 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.api;
 
 import static org.hamcrest.Matchers.is;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -388,32 +389,26 @@ class SchedulerJobApiTests {
 				""".formatted(url);
 	}
 
-	private String waitForExecutionLog(String group, String name, String expected) throws Exception {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-		do {
+	private String waitForExecutionLog(String group, String name, String expected) {
+		AtomicReference<String> result = new AtomicReference<>();
+		await().atMost(5, TimeUnit.SECONDS).pollInterval(25, TimeUnit.MILLISECONDS).until(() -> {
 			String content = mockMvc.perform(get("/api/v1/jobs/{group}/{name}/logs", group, name))
 					.andExpect(status().isOk())
 					.andReturn().getResponse().getContentAsString();
-			if (content.contains(expected)) return content;
-			Thread.sleep(25);
-		}
-		while (System.nanoTime() < deadline);
-		throw new AssertionError("O log esperado não foi persistido dentro do prazo: " + expected);
+			result.set(content);
+			return content.contains(expected);
+		});
+		return result.get();
 	}
 
-	private void waitForExecutionResult(
-			String group, String name, String result, int expectedCount) throws InterruptedException {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-		do {
+	private void waitForExecutionResult(String group, String name, String result, int expectedCount) {
+		await().atMost(5, TimeUnit.SECONDS).pollInterval(25, TimeUnit.MILLISECONDS).until(() -> {
 			Integer count = jdbc.queryForObject("""
 					SELECT count(*)
 					FROM public.scheduler_execution_history
 					WHERE job_group = ? AND job_name = ? AND result = ?
 					""", Integer.class, group, name, result);
-			if (count != null && count >= expectedCount) return;
-			Thread.sleep(25);
-		}
-		while (System.nanoTime() < deadline);
-		throw new AssertionError("O resultado esperado não foi persistido dentro do prazo: " + result);
+			return count != null && count >= expectedCount;
+		});
 	}
 }

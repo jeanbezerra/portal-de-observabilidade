@@ -1,5 +1,7 @@
 package com.porto.ciops.coa.obs.scheduler.administration.api;
 
+import static com.porto.ciops.coa.obs.scheduler.administration.application.AdministrationCatalogService.MANAGED_HOLIDAY_CALENDAR_DESCRIPTION;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -8,7 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import org.junit.jupiter.api.Test;
+import org.quartz.Scheduler;
+import org.quartz.impl.calendar.HolidayCalendar;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -23,6 +29,8 @@ class AdministrationCatalogApiTests {
 
 	@Autowired
 	private MockMvc mockMvc;
+	@Autowired
+	private Scheduler scheduler;
 
 	@Test
 	void shouldExposeAdministrationCatalogs() throws Exception {
@@ -42,6 +50,10 @@ class AdministrationCatalogApiTests {
 
 	@Test
 	void shouldCreateAndDeleteCalendarEntry() throws Exception {
+		String managedCalendarName = "integration-holidays";
+		HolidayCalendar managedCalendar = new HolidayCalendar();
+		managedCalendar.setDescription(MANAGED_HOLIDAY_CALENDAR_DESCRIPTION);
+		scheduler.addCalendar(managedCalendarName, managedCalendar, false, false);
 		String request = """
 				{
 				  "id": "CAL-integration-test",
@@ -60,9 +72,16 @@ class AdministrationCatalogApiTests {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id", is("CAL-integration-test")))
 				.andExpect(jsonPath("$.date", is("2027-01-02")));
+		long holiday = LocalDate.of(2027, 1, 2)
+				.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+		HolidayCalendar refreshedCalendar = (HolidayCalendar) scheduler.getCalendar(managedCalendarName);
+		assertThat(refreshedCalendar.isTimeIncluded(holiday)).isFalse();
 
 		mockMvc.perform(delete("/api/v1/calendars/CAL-integration-test"))
 				.andExpect(status().isNoContent())
 				.andExpect(content().string(""));
+		refreshedCalendar = (HolidayCalendar) scheduler.getCalendar(managedCalendarName);
+		assertThat(refreshedCalendar.isTimeIncluded(holiday)).isTrue();
+		assertThat(scheduler.deleteCalendar(managedCalendarName)).isTrue();
 	}
 }

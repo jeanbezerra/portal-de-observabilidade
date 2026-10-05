@@ -7,6 +7,7 @@ import com.porto.ciops.coa.obs.scheduler.jobs.application.model.BulkJobActionRes
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionHistoryResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogPageResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogResponse;
+import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogSearchCriteria;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobRequest;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.JobTypeConfigurationRequest;
@@ -157,7 +158,7 @@ public class SchedulerJobController {
 			@RequestParam(defaultValue = "ALL") String level,
 			@RequestParam(defaultValue = "") String fireInstanceId,
 			@RequestParam(defaultValue = "") String query) {
-		return service.searchExecutionLogs(
-				group, name, page, pageSize, sort, direction, level, fireInstanceId, query);
+		return service.searchExecutionLogs(group, name,
+				new ExecutionLogSearchCriteria(page, pageSize, sort, direction, level, fireInstanceId, query));
 	}
 }

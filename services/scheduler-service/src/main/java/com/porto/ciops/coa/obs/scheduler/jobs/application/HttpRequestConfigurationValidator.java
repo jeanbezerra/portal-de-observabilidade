@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
@@ -64,7 +65,7 @@ public class HttpRequestConfigurationValidator {
 			try {
 				objectMapper.readTree(configuration.body());
 			}
-			catch (Exception exception) {
+			catch (JacksonException exception) {
 				throw ApplicationProblemException.invalidInput(
 						"Corpo JSON inválido", "Informe um documento JSON válido no corpo da requisição.", exception);
 			}
@@ -181,16 +182,17 @@ public class HttpRequestConfigurationValidator {
 	}
 
 	private static void validateHttpUri(String value, String label) {
+		URI uri;
 		try {
-			URI uri = URI.create(value);
-			if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-					|| uri.getHost() == null || uri.getUserInfo() != null) {
-				throw new IllegalArgumentException();
-			}
+			uri = URI.create(value);
 		}
 		catch (IllegalArgumentException exception) {
 			throw ApplicationProblemException.invalidInput(
 					label + " inválida", "Informe uma URL absoluta usando http ou https.", exception);
+		}
+		if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+				|| uri.getHost() == null || uri.getUserInfo() != null) {
+			throw invalid(label + " inválida", "Informe uma URL absoluta usando http ou https.");
 		}
 	}
 

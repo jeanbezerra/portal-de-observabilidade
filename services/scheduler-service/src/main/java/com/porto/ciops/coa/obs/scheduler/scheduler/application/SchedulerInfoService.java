@@ -29,7 +29,7 @@ public class SchedulerInfoService {
 	}
 
 	private String resolveState() throws SchedulerException {
-		String state = "STARTING";
+		String state;
 		if (scheduler.isShutdown()) {
 			state = "SHUTDOWN";
 		}
@@ -38,6 +38,9 @@ public class SchedulerInfoService {
 		}
 		else if (scheduler.isStarted()) {
 			state = "RUNNING";
+		}
+		else {
+			state = "STARTING";
 		}
 		return state;
 	}
