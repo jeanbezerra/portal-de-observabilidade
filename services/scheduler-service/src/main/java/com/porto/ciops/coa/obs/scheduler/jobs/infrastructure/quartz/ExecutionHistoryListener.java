@@ -6,11 +6,16 @@ import java.time.Instant;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ExecutionHistoryListener implements JobListener {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionHistoryListener.class);
+	private static final String LOG_SOURCE = "quartz";
 
 	private final JdbcTemplate jdbc;
 	private final ExecutionLogRecorder executionLogs;
@@ -40,7 +45,7 @@ public class ExecutionHistoryListener implements JobListener {
 				timestamp(context.getScheduledFireTime() == null ? null : context.getScheduledFireTime().toInstant()),
 				timestamp(context.getFireTime().toInstant()), "Execução iniciada.",
 				context.getRefireCount(), context.isRecovering());
-		executionLogs.info(context.getFireInstanceId(), "quartz", "Execução iniciada.", """
+		executionLogs.info(context.getFireInstanceId(), LOG_SOURCE, "Execução iniciada.", """
 				Job: %s
 				Trigger: %s
 				Instância: %s
@@ -57,13 +62,13 @@ public class ExecutionHistoryListener implements JobListener {
 				SET finished_at = ?, duration_ms = 0, result = 'FAILED', message = ?
 				WHERE fire_instance_id = ?
 				""", timestamp(Instant.now()), "Execução vetada por um listener do scheduler.", context.getFireInstanceId());
-		executionLogs.warn(context.getFireInstanceId(), "quartz",
+		executionLogs.warn(context.getFireInstanceId(), LOG_SOURCE,
 				"Execução vetada por um listener do scheduler.", null);
 	}
 
 	@Override
 	public void jobWasExecuted(JobExecutionContext context, JobExecutionException jobException) {
-		String result = jobException != null ? "FAILED" : context.isRecovering() ? "RECOVERED" : "SUCCESS";
+		String result = executionResult(context, jobException);
 		String message = jobException != null
 				? safeMessage(jobException)
 				: successMessage(context);
@@ -73,12 +78,17 @@ public class ExecutionHistoryListener implements JobListener {
 				WHERE fire_instance_id = ?
 				""", timestamp(Instant.now()), context.getJobRunTime(), result, message, context.getFireInstanceId());
 		if (jobException != null) {
-			executionLogs.error(context.getFireInstanceId(), "quartz", message, jobException);
+			executionLogs.error(context.getFireInstanceId(), LOG_SOURCE, message, jobException);
 		}
 		else {
-			executionLogs.info(context.getFireInstanceId(), "quartz", message,
+			executionLogs.info(context.getFireInstanceId(), LOG_SOURCE, message,
 					"Duração: " + context.getJobRunTime() + " ms");
 		}
+	}
+
+	private static String executionResult(JobExecutionContext context, JobExecutionException jobException) {
+		if (jobException != null) return "FAILED";
+		return context.isRecovering() ? "RECOVERED" : "SUCCESS";
 	}
 
 	private static String successMessage(JobExecutionContext context) {
@@ -94,6 +104,7 @@ public class ExecutionHistoryListener implements JobListener {
 			return context.getScheduler().getSchedulerInstanceId();
 		}
 		catch (org.quartz.SchedulerException exception) {
+			LOGGER.warn("Não foi possível identificar a instância do scheduler para o histórico.", exception);
 			return "unknown";
 		}
 	}

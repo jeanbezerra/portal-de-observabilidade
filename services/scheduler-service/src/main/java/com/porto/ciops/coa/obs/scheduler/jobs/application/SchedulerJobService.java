@@ -1,8 +1,6 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.application;
 
 import com.porto.ciops.coa.obs.scheduler.administration.application.AdministrationCatalogService;
-import com.porto.ciops.coa.obs.scheduler.jobs.application.model.BulkJobActionResponse;
-import com.porto.ciops.coa.obs.scheduler.jobs.application.model.BulkJobKeyRequest;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionHistoryResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogPageResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.ExecutionLogResponse;
@@ -14,9 +12,9 @@ import com.porto.ciops.coa.obs.scheduler.jobs.application.model.TriggerRequest;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.TriggerResponse;
 import com.porto.ciops.coa.obs.scheduler.jobs.infrastructure.quartz.HttpRequestJob;
 import com.porto.ciops.coa.obs.scheduler.support.ApplicationProblemException;
+import jakarta.validation.Valid;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -65,8 +63,22 @@ public class SchedulerJobService {
 		return queries.getJob(group, name);
 	}
 
-	@Transactional
-	public JobResponse createJob(JobRequest request) throws SchedulerException {
+	@Transactional(rollbackFor = SchedulerException.class)
+	public JobResponse createJob(@Valid JobRequest request) throws SchedulerException {
+		return createJobInternal(request);
+	}
+
+	private JobResponse createJobInternal(JobRequest request) throws SchedulerException {
+		validateNewJob(request);
+		JobKey key = JobKey.jobKey(request.name(), request.group());
+		ensureJobKeyAvailable(key);
+		JobDetail detail = buildJobDetail(key, request);
+		Set<Trigger> triggers = buildTriggers(key, request.triggers());
+		persistNewJob(key, detail, triggers, request);
+		return getJob(request.group(), request.name());
+	}
+
+	private void validateNewJob(JobRequest request) {
 		if (!catalogs.activeJobGroupExists(request.group())) {
 			throw ApplicationProblemException.conflict("Grupo indisponível",
 					"Selecione um grupo de rotinas ativo e cadastrado.");
@@ -75,35 +87,43 @@ public class SchedulerJobService {
 			throw ApplicationProblemException.invalidInput("Rotina não durável sem trigger",
 					"Uma rotina sem trigger inicial precisa ser durável.");
 		}
+		validateRequestCollections(request);
+		httpValidator.validate(request.httpRequest());
+	}
 
-		JobKey key = JobKey.jobKey(request.name(), request.group());
+	private void ensureJobKeyAvailable(JobKey key) throws SchedulerException {
 		if (scheduler.checkExists(key)) {
 			throw ApplicationProblemException.conflict("Rotina duplicada",
 					"Já existe uma rotina com este nome e grupo.");
 		}
-		validateRequestCollections(request);
-		httpValidator.validate(request.httpRequest());
+	}
 
+	private static JobDetail buildJobDetail(JobKey key, JobRequest request) {
 		JobDataMap dataMap = new JobDataMap();
 		dataMap.put("_jobType", request.type());
-
-		JobDetail detail = JobBuilder.newJob(HttpRequestJob.class)
+		return JobBuilder.newJob(HttpRequestJob.class)
 				.withIdentity(key)
 				.withDescription(request.description())
 				.storeDurably(request.durable())
 				.requestRecovery(request.requestsRecovery())
 				.usingJobData(dataMap)
 				.build();
+	}
 
-		Set<Trigger> triggers = new HashSet<>();
-		for (TriggerRequest triggerRequest : request.triggers()) {
+	private Set<Trigger> buildTriggers(JobKey key, List<TriggerRequest> requests) throws SchedulerException {
+		Set<Trigger> triggers = HashSet.newHashSet(requests.size());
+		for (TriggerRequest triggerRequest : requests) {
 			if (scheduler.checkExists(TriggerKey.triggerKey(triggerRequest.key(), triggerRequest.group()))) {
 				throw ApplicationProblemException.conflict("Trigger duplicado",
 						"Já existe um trigger com a chave e o grupo informados.");
 			}
 			triggers.add(triggerFactory.build(key, triggerRequest));
 		}
+		return triggers;
+	}
 
+	private void persistNewJob(JobKey key, JobDetail detail, Set<Trigger> triggers, JobRequest request)
+			throws SchedulerException {
 		boolean quartzCreated = false;
 		try {
 			if (triggers.isEmpty()) {
@@ -117,7 +137,7 @@ public class SchedulerJobService {
 		}
 		catch (ObjectAlreadyExistsException exception) {
 			throw ApplicationProblemException.conflict("Rotina ou trigger duplicado",
-					"Uma rotina ou um trigger com a mesma chave foi criado por outra solicitação.");
+					"Uma rotina ou um trigger com a mesma chave foi criado por outra solicitação.", exception);
 		}
 		catch (RuntimeException | SchedulerException exception) {
 			if (quartzCreated) {
@@ -130,13 +150,11 @@ public class SchedulerJobService {
 			}
 			throw exception;
 		}
-
-		return getJob(request.group(), request.name());
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = SchedulerException.class)
 	public TriggerResponse updateTrigger(String jobGroup, String jobName, String triggerGroup,
-			String triggerName, TriggerRequest request) throws SchedulerException {
+			String triggerName, @Valid TriggerRequest request) throws SchedulerException {
 		JobKey jobKey = JobKey.jobKey(jobName, jobGroup);
 		if (!scheduler.checkExists(jobKey)) {
 			throw notFound(jobGroup, jobName);
@@ -160,9 +178,9 @@ public class SchedulerJobService {
 		return queries.getTrigger(oldKey);
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = SchedulerException.class)
 	public JobResponse updateJobTypeConfiguration(String group, String name,
-			JobTypeConfigurationRequest request) throws SchedulerException {
+			@Valid JobTypeConfigurationRequest request) throws SchedulerException {
 		ensureJobExists(group, name);
 		JobResponse current = getJob(group, name);
 		if (!"HTTP_REQUEST".equals(current.type()) || current.httpRequest() == null) {
@@ -210,7 +228,7 @@ public class SchedulerJobService {
 		return getJob(group, name);
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = SchedulerException.class)
 	public JobResponse interruptJob(String group, String name) throws SchedulerException {
 		JobResponse job = getJob(group, name);
 		if (!job.interruptable()) {
@@ -229,7 +247,7 @@ public class SchedulerJobService {
 		return getJob(group, name);
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = SchedulerException.class)
 	public JobResponse duplicateJob(String group, String name) throws SchedulerException {
 		JobResponse source = getJob(group, name);
 		if (!"HTTP_REQUEST".equals(source.type()) || source.httpRequest() == null) {
@@ -244,47 +262,20 @@ public class SchedulerJobService {
 						trigger.group(), trigger.type(), trigger.expression(), trigger.timeZone(),
 						trigger.calendar(), trigger.priority(), trigger.misfireInstruction()))
 				.toList();
-		JobResponse copy = createJob(new JobRequest(
+		JobResponse copy = createJobInternal(new JobRequest(
 				copyName, source.group(), "Cópia de " + source.name() + ". Revise o agendamento antes de ativar.",
 				source.type(), source.httpRequest(), source.durable(), source.requestsRecovery(), triggers));
 		scheduler.pauseJob(JobKey.jobKey(copy.name(), copy.group()));
 		return getJob(copy.group(), copy.name());
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = SchedulerException.class)
 	public void deleteJob(String group, String name) throws SchedulerException {
 		ensureJobExists(group, name);
 		if (!scheduler.deleteJob(JobKey.jobKey(name, group))) {
 			throw notFound(group, name);
 		}
 		jdbc.update("DELETE FROM public.scheduler_job_metadata WHERE job_group = ? AND job_name = ?", group, name);
-	}
-
-	public BulkJobActionResponse bulkAction(List<BulkJobKeyRequest> jobs, String action) {
-		if (!Set.of("pause", "trigger", "interrupt").contains(action)) {
-			throw ApplicationProblemException.invalidInput("Ação em lote inválida",
-					"Use pause, trigger ou interrupt.");
-		}
-		int succeeded = 0;
-		List<String> skipped = new ArrayList<>();
-		for (BulkJobKeyRequest job : jobs) {
-			String group = job.group();
-			String name = job.name();
-			String id = group + "." + name;
-			try {
-				switch (action) {
-					case "pause" -> pauseJob(group, name);
-					case "trigger" -> triggerJob(group, name);
-					case "interrupt" -> interruptJob(group, name);
-					default -> throw new IllegalStateException("Ação em lote não suportada: " + action);
-				}
-				succeeded++;
-			}
-			catch (RuntimeException | SchedulerException exception) {
-				skipped.add(id);
-			}
-		}
-		return new BulkJobActionResponse(jobs.size(), succeeded, skipped);
 	}
 
 	public List<ExecutionHistoryResponse> listExecutions(int limit) {
@@ -342,7 +333,7 @@ public class SchedulerJobService {
 	}
 
 	private static void validateRequestCollections(JobRequest request) {
-		Set<TriggerKey> triggerKeys = new HashSet<>();
+		Set<TriggerKey> triggerKeys = HashSet.newHashSet(request.triggers().size());
 		for (TriggerRequest trigger : request.triggers()) {
 			if (!triggerKeys.add(TriggerKey.triggerKey(trigger.key(), trigger.group()))) {
 				throw ApplicationProblemException.invalidInput("Trigger duplicado",

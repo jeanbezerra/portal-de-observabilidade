@@ -29,9 +29,16 @@ public class SchedulerInfoService {
 	}
 
 	private String resolveState() throws SchedulerException {
-		if (scheduler.isShutdown()) return "SHUTDOWN";
-		if (scheduler.isInStandbyMode()) return "STANDBY";
-		if (scheduler.isStarted()) return "RUNNING";
-		return "STARTING";
+		String state = "STARTING";
+		if (scheduler.isShutdown()) {
+			state = "SHUTDOWN";
+		}
+		else if (scheduler.isInStandbyMode()) {
+			state = "STANDBY";
+		}
+		else if (scheduler.isStarted()) {
+			state = "RUNNING";
+		}
+		return state;
 	}
 }

@@ -15,5 +15,11 @@ public record JobRequest(
 		@NotNull @Valid HttpRequestConfiguration httpRequest,
 		boolean durable,
 		boolean requestsRecovery,
-		@NotNull List<@Valid TriggerRequest> triggers) {
+		@NotNull @Valid List<TriggerRequest> triggers) {
+
+	public JobRequest {
+		if (triggers != null) {
+			triggers = List.copyOf(triggers);
+		}
+	}
 }

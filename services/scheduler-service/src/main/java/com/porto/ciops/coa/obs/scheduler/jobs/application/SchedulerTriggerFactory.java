@@ -5,6 +5,7 @@ import static com.porto.ciops.coa.obs.scheduler.administration.application.Admin
 import com.porto.ciops.coa.obs.scheduler.administration.application.AdministrationCatalogService;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.TriggerRequest;
 import com.porto.ciops.coa.obs.scheduler.support.ApplicationProblemException;
+import jakarta.validation.Valid;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -32,6 +33,10 @@ import org.springframework.stereotype.Component;
 class SchedulerTriggerFactory {
 
 	private static final String NO_CALENDAR = "Sem calendário de exclusão";
+	private static final String IGNORE_MISFIRE_POLICY = "IGNORE_MISFIRE_POLICY";
+	private static final String DO_NOTHING = "DO_NOTHING";
+	private static final String FIRE_ONCE_NOW = "FIRE_ONCE_NOW";
+	private static final String SMART_POLICY = "SMART_POLICY";
 	private static final Pattern SIMPLE_EXPRESSION = Pattern.compile(
 			"(?i)^INTERVAL\\s+(\\d+)\\s+(MILLISECONDS?|SECONDS?|MINUTES?|HOURS?|DAYS?)(?:\\s*[·|]\\s*REPEAT\\s+(FOREVER|\\d+))?$");
 	private static final Pattern CALENDAR_EXPRESSION = Pattern.compile(
@@ -47,7 +52,7 @@ class SchedulerTriggerFactory {
 		this.catalogs = catalogs;
 	}
 
-	Trigger build(JobKey jobKey, TriggerRequest request) throws SchedulerException {
+	Trigger build(JobKey jobKey, @Valid TriggerRequest request) throws SchedulerException {
 		validateTimeZone(request.timeZone());
 		TriggerBuilder<Trigger> builder = TriggerBuilder.newTrigger()
 				.withIdentity(request.key(), request.group())
@@ -74,25 +79,25 @@ class SchedulerTriggerFactory {
 		return calendar.trim();
 	}
 
-	private CronScheduleBuilder cronSchedule(TriggerRequest request) {
+	private static CronScheduleBuilder cronSchedule(TriggerRequest request) {
 		try {
 			CronScheduleBuilder builder = CronScheduleBuilder.cronSchedule(request.expression())
 					.inTimeZone(TimeZone.getTimeZone(ZoneId.of(request.timeZone())));
 			return switch (request.misfireInstruction()) {
-				case "IGNORE_MISFIRE_POLICY" -> builder.withMisfireHandlingInstructionIgnoreMisfires();
-				case "DO_NOTHING" -> builder.withMisfireHandlingInstructionDoNothing();
-				case "FIRE_ONCE_NOW" -> builder.withMisfireHandlingInstructionFireAndProceed();
-				case "SMART_POLICY" -> builder;
+				case IGNORE_MISFIRE_POLICY -> builder.withMisfireHandlingInstructionIgnoreMisfires();
+				case DO_NOTHING -> builder.withMisfireHandlingInstructionDoNothing();
+				case FIRE_ONCE_NOW -> builder.withMisfireHandlingInstructionFireAndProceed();
+				case SMART_POLICY -> builder;
 				default -> throw invalidSchedule("Política de misfire inválida para CronTrigger.");
 			};
 		}
 		catch (RuntimeException exception) {
 			if (exception instanceof ApplicationProblemException problem) throw problem;
-			throw invalidSchedule("A expressão cron informada não é válida para o Quartz.");
+			throw invalidSchedule("A expressão cron informada não é válida para o Quartz.", exception);
 		}
 	}
 
-	private SimpleScheduleBuilder simpleSchedule(TriggerRequest request) {
+	private static SimpleScheduleBuilder simpleSchedule(TriggerRequest request) {
 		Matcher matcher = SIMPLE_EXPRESSION.matcher(request.expression().trim());
 		if (!matcher.matches()) {
 			throw invalidSchedule("Use o formato INTERVAL 5 MINUTES · REPEAT FOREVER para SimpleTrigger.");
@@ -110,7 +115,7 @@ class SchedulerTriggerFactory {
 			};
 		}
 		catch (ArithmeticException exception) {
-			throw invalidSchedule("O intervalo informado é maior que o limite suportado.");
+			throw invalidSchedule("O intervalo informado é maior que o limite suportado.", exception);
 		}
 		if (milliseconds <= 0) throw invalidSchedule("O intervalo precisa ser maior que zero.");
 		SimpleScheduleBuilder builder = SimpleScheduleBuilder.simpleSchedule().withIntervalInMilliseconds(milliseconds);
@@ -118,16 +123,16 @@ class SchedulerTriggerFactory {
 		builder = repeat == null || "FOREVER".equalsIgnoreCase(repeat)
 				? builder.repeatForever() : builder.withRepeatCount(parseNonNegativeInt(repeat));
 		return switch (request.misfireInstruction()) {
-			case "IGNORE_MISFIRE_POLICY" -> builder.withMisfireHandlingInstructionIgnoreMisfires();
+			case IGNORE_MISFIRE_POLICY -> builder.withMisfireHandlingInstructionIgnoreMisfires();
 			case "FIRE_NOW" -> builder.withMisfireHandlingInstructionFireNow();
 			case "RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT" -> builder.withMisfireHandlingInstructionNowWithExistingCount();
 			case "RESCHEDULE_NEXT_WITH_REMAINING_COUNT", "NEXT_WITH_REMAINING_COUNT" -> builder.withMisfireHandlingInstructionNextWithRemainingCount();
-			case "SMART_POLICY" -> builder;
+			case SMART_POLICY -> builder;
 			default -> throw invalidSchedule("Política de misfire inválida para SimpleTrigger.");
 		};
 	}
 
-	private CalendarIntervalScheduleBuilder calendarIntervalSchedule(TriggerRequest request) {
+	private static CalendarIntervalScheduleBuilder calendarIntervalSchedule(TriggerRequest request) {
 		Matcher matcher = CALENDAR_EXPRESSION.matcher(request.expression().trim());
 		if (!matcher.matches()) throw invalidSchedule("Use o formato 1 DAY para CalendarIntervalTrigger.");
 		int amount = parsePositiveInt(matcher.group(1));
@@ -136,15 +141,15 @@ class SchedulerTriggerFactory {
 				.withInterval(amount, unit)
 				.inTimeZone(TimeZone.getTimeZone(ZoneId.of(request.timeZone())));
 		return switch (request.misfireInstruction()) {
-			case "IGNORE_MISFIRE_POLICY" -> builder.withMisfireHandlingInstructionIgnoreMisfires();
-			case "DO_NOTHING" -> builder.withMisfireHandlingInstructionDoNothing();
-			case "FIRE_ONCE_NOW" -> builder.withMisfireHandlingInstructionFireAndProceed();
-			case "SMART_POLICY" -> builder;
+			case IGNORE_MISFIRE_POLICY -> builder.withMisfireHandlingInstructionIgnoreMisfires();
+			case DO_NOTHING -> builder.withMisfireHandlingInstructionDoNothing();
+			case FIRE_ONCE_NOW -> builder.withMisfireHandlingInstructionFireAndProceed();
+			case SMART_POLICY -> builder;
 			default -> throw invalidSchedule("Política de misfire inválida para CalendarIntervalTrigger.");
 		};
 	}
 
-	private DailyTimeIntervalScheduleBuilder dailyTimeIntervalSchedule(TriggerRequest request) {
+	private static DailyTimeIntervalScheduleBuilder dailyTimeIntervalSchedule(TriggerRequest request) {
 		Matcher matcher = DAILY_EXPRESSION.matcher(request.expression().trim());
 		if (!matcher.matches()) {
 			throw invalidSchedule("Use o formato MON-FRI · 08:00-18:00 · INTERVAL 30 MINUTES para DailyTimeIntervalTrigger.");
@@ -165,10 +170,10 @@ class SchedulerTriggerFactory {
 			default -> throw invalidSchedule("Dias inválidos para DailyTimeIntervalTrigger.");
 		};
 		return switch (request.misfireInstruction()) {
-			case "IGNORE_MISFIRE_POLICY" -> builder.withMisfireHandlingInstructionIgnoreMisfires();
-			case "DO_NOTHING" -> builder.withMisfireHandlingInstructionDoNothing();
-			case "FIRE_ONCE_NOW" -> builder.withMisfireHandlingInstructionFireAndProceed();
-			case "SMART_POLICY" -> builder;
+			case IGNORE_MISFIRE_POLICY -> builder.withMisfireHandlingInstructionIgnoreMisfires();
+			case DO_NOTHING -> builder.withMisfireHandlingInstructionDoNothing();
+			case FIRE_ONCE_NOW -> builder.withMisfireHandlingInstructionFireAndProceed();
+			case SMART_POLICY -> builder;
 			default -> throw invalidSchedule("Política de misfire inválida para DailyTimeIntervalTrigger.");
 		};
 	}
@@ -188,12 +193,16 @@ class SchedulerTriggerFactory {
 			ZoneId.of(timeZone);
 		}
 		catch (ZoneRulesException exception) {
-			throw invalidSchedule("O fuso horário do trigger não é um identificador IANA válido.");
+			throw invalidSchedule("O fuso horário do trigger não é um identificador IANA válido.", exception);
 		}
 	}
 
 	private static ApplicationProblemException invalidSchedule(String detail) {
 		return ApplicationProblemException.invalidInput("Agendamento inválido", detail);
+	}
+
+	private static ApplicationProblemException invalidSchedule(String detail, Throwable cause) {
+		return ApplicationProblemException.invalidInput("Agendamento inválido", detail, cause);
 	}
 
 	private static int parsePositiveInt(String value) {
@@ -203,7 +212,7 @@ class SchedulerTriggerFactory {
 			return parsed;
 		}
 		catch (NumberFormatException exception) {
-			throw invalidSchedule("O intervalo e a repetição precisam ser números inteiros positivos.");
+			throw invalidSchedule("O intervalo e a repetição precisam ser números inteiros positivos.", exception);
 		}
 	}
 
@@ -214,7 +223,7 @@ class SchedulerTriggerFactory {
 			return parsed;
 		}
 		catch (NumberFormatException exception) {
-			throw invalidSchedule("O intervalo precisa ser um número inteiro positivo.");
+			throw invalidSchedule("O intervalo precisa ser um número inteiro positivo.", exception);
 		}
 	}
 
@@ -225,7 +234,7 @@ class SchedulerTriggerFactory {
 			return parsed;
 		}
 		catch (NumberFormatException exception) {
-			throw invalidSchedule("A repetição precisa ser um número inteiro não negativo.");
+			throw invalidSchedule("A repetição precisa ser um número inteiro não negativo.", exception);
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.infrastructure.quartz;
 
 import com.porto.ciops.coa.obs.scheduler.jobs.infrastructure.http.HttpRequestJobExecutor;
+import java.util.concurrent.atomic.AtomicReference;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.InterruptableJob;
 import org.quartz.JobExecutionContext;
@@ -11,7 +12,7 @@ import org.quartz.UnableToInterruptJobException;
 public class HttpRequestJob implements InterruptableJob {
 
 	private final HttpRequestJobExecutor executor;
-	private volatile Thread executionThread;
+	private final AtomicReference<Thread> executionThread = new AtomicReference<>();
 
 	public HttpRequestJob(HttpRequestJobExecutor executor) {
 		this.executor = executor;
@@ -19,7 +20,8 @@ public class HttpRequestJob implements InterruptableJob {
 
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
-		executionThread = Thread.currentThread();
+		Thread currentThread = Thread.currentThread();
+		executionThread.set(currentThread);
 		try {
 			context.setResult(executor.execute(context.getJobDetail().getKey(), context.getFireInstanceId()));
 		}
@@ -31,13 +33,13 @@ public class HttpRequestJob implements InterruptableJob {
 			throw new JobExecutionException(safeMessage(exception), exception, false);
 		}
 		finally {
-			executionThread = null;
+			executionThread.compareAndSet(currentThread, null);
 		}
 	}
 
 	@Override
 	public void interrupt() throws UnableToInterruptJobException {
-		Thread running = executionThread;
+		Thread running = executionThread.get();
 		if (running != null) running.interrupt();
 	}
 

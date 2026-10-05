@@ -4,5 +4,11 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
-public record BulkJobActionRequest(@NotEmpty List<@Valid BulkJobKeyRequest> jobs) {
+public record BulkJobActionRequest(@NotEmpty @Valid List<BulkJobKeyRequest> jobs) {
+
+	public BulkJobActionRequest {
+		if (jobs != null) {
+			jobs = List.copyOf(jobs);
+		}
+	}
 }

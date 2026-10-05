@@ -8,12 +8,15 @@ import com.porto.ciops.coa.obs.scheduler.administration.application.model.JobTyp
 import com.porto.ciops.coa.obs.scheduler.administration.application.model.TimeZoneRequest;
 import com.porto.ciops.coa.obs.scheduler.administration.application.model.TimeZoneResponse;
 import com.porto.ciops.coa.obs.scheduler.support.ApplicationProblemException;
+import jakarta.validation.Valid;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.zone.ZoneRulesException;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -34,6 +37,10 @@ public class AdministrationCatalogService {
 			"Calendário de feriados gerenciado pelo Scheduler Service";
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AdministrationCatalogService.class);
+	private static final String DATE_NOT_FOUND_TITLE = "Data não encontrada";
+	private static final String DATE_NOT_FOUND_DETAIL = "A data solicitada não existe no calendário.";
+	private static final String CREATED_AT_COLUMN = "created_at";
+	private static final String UPDATED_AT_COLUMN = "updated_at";
 
 	private final JdbcTemplate jdbc;
 	private final Scheduler scheduler;
@@ -48,10 +55,10 @@ public class AdministrationCatalogService {
 				SELECT id, name, calendar_date, entry_type, scope, location, notes, created_at, updated_at
 				FROM public.scheduler_calendar_entry
 				ORDER BY calendar_date, name, id
-				""", AdministrationCatalogService::mapCalendarEntry);
+				""", (resultSet, _) -> mapCalendarEntry(resultSet));
 	}
 
-	public CalendarEntryResponse createCalendarEntry(CalendarEntryRequest request) {
+	public CalendarEntryResponse createCalendarEntry(@Valid CalendarEntryRequest request) {
 		validateCalendarLocation(request.scope(), request.location());
 		Instant now = Instant.now();
 		String id = normalizeRequestedId(request.id(), "CAL-");
@@ -67,7 +74,7 @@ public class AdministrationCatalogService {
 					trim(request.location()), normalize(request.location()), trim(request.notes()), timestamp(now), timestamp(now));
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Data duplicada", "Já existe uma data idêntica cadastrada para essa localidade.");
+			throw conflict("Data duplicada", "Já existe uma data idêntica cadastrada para essa localidade.", exception);
 		}
 
 		CalendarEntryResponse created = findCalendarEntry(id);
@@ -75,7 +82,7 @@ public class AdministrationCatalogService {
 		return created;
 	}
 
-	public CalendarEntryResponse updateCalendarEntry(String id, CalendarEntryRequest request) {
+	public CalendarEntryResponse updateCalendarEntry(String id, @Valid CalendarEntryRequest request) {
 		validateCalendarLocation(request.scope(), request.location());
 		try {
 			int updated = jdbc.update("""
@@ -87,11 +94,11 @@ public class AdministrationCatalogService {
 					trim(request.name()), normalize(request.name()), request.date(), request.type(), request.scope(),
 					trim(request.location()), normalize(request.location()), trim(request.notes()), timestamp(Instant.now()), id);
 			if (updated == 0) {
-				throw notFound("Data não encontrada", "A data solicitada não existe no calendário.");
+				throw notFound(DATE_NOT_FOUND_TITLE, DATE_NOT_FOUND_DETAIL);
 			}
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Data duplicada", "Já existe uma data idêntica cadastrada para essa localidade.");
+			throw conflict("Data duplicada", "Já existe uma data idêntica cadastrada para essa localidade.", exception);
 		}
 		CalendarEntryResponse updatedEntry = findCalendarEntry(id);
 		refreshQuartzCalendars();
@@ -100,7 +107,7 @@ public class AdministrationCatalogService {
 
 	public void deleteCalendarEntry(String id) {
 		if (jdbc.update("DELETE FROM public.scheduler_calendar_entry WHERE id = ?", id) == 0) {
-			throw notFound("Data não encontrada", "A data solicitada não existe no calendário.");
+			throw notFound(DATE_NOT_FOUND_TITLE, DATE_NOT_FOUND_DETAIL);
 		}
 		refreshQuartzCalendars();
 	}
@@ -110,13 +117,14 @@ public class AdministrationCatalogService {
 				SELECT id, label, time_zone, description, active, is_default, created_at, updated_at
 				FROM public.scheduler_time_zone
 				ORDER BY is_default DESC, label, id
-				""", AdministrationCatalogService::mapTimeZone);
+				""", (resultSet, _) -> mapTimeZone(resultSet));
 	}
 
 	@Transactional
-	public TimeZoneResponse createTimeZone(TimeZoneRequest request) {
+	public TimeZoneResponse createTimeZone(@Valid TimeZoneRequest request) {
 		String zone = validateAndCanonicalizeTimeZone(request.timeZone());
-		boolean first = jdbc.queryForObject("SELECT count(*) FROM public.scheduler_time_zone", Long.class) == 0;
+		Long timeZoneCount = jdbc.queryForObject("SELECT count(*) FROM public.scheduler_time_zone", Long.class);
+		boolean first = timeZoneCount == null || timeZoneCount == 0;
 		boolean makeDefault = first || request.isDefault();
 		boolean active = makeDefault || request.active();
 		Instant now = Instant.now();
@@ -135,21 +143,21 @@ public class AdministrationCatalogService {
 					makeDefault ? "DEFAULT" : null, timestamp(now), timestamp(now));
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Fuso horário duplicado", "Este fuso horário já está cadastrado.");
+			throw conflict("Fuso horário duplicado", "Este fuso horário já está cadastrado.", exception);
 		}
 		return findTimeZone(id);
 	}
 
 	@Transactional
-	public TimeZoneResponse updateTimeZone(String id, TimeZoneRequest request) {
+	public TimeZoneResponse updateTimeZone(String id, @Valid TimeZoneRequest request) {
 		TimeZoneResponse current = findTimeZone(id);
-		String zone = validateAndCanonicalizeTimeZone(request.timeZone());
 		if (current.isDefault() && !request.isDefault()) {
 			throw conflict("Fuso horário padrão", "Defina outro fuso como padrão antes de alterar este registro.");
 		}
 		if (request.isDefault() && !request.active()) {
 			throw conflict("Fuso horário inativo", "O fuso horário padrão precisa estar ativo.");
 		}
+		String zone = validateAndCanonicalizeTimeZone(request.timeZone());
 		Instant now = Instant.now();
 		if (request.isDefault()) {
 			clearDefaultTimeZone(now);
@@ -165,7 +173,7 @@ public class AdministrationCatalogService {
 					request.isDefault() ? "DEFAULT" : null, timestamp(now), id);
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Fuso horário duplicado", "Este fuso horário já está cadastrado.");
+			throw conflict("Fuso horário duplicado", "Este fuso horário já está cadastrado.", exception);
 		}
 		return findTimeZone(id);
 	}
@@ -186,7 +194,7 @@ public class AdministrationCatalogService {
 				        WHERE q.sched_name = ? AND q.job_group = g.group_key) AS routine_count
 				FROM public.scheduler_job_group g
 				ORDER BY g.name, g.id
-				""", AdministrationCatalogService::mapJobGroup, schedulerName());
+				""", (resultSet, _) -> mapJobGroup(resultSet), schedulerName());
 	}
 
 	public List<JobTypeResponse> listJobTypes() {
@@ -197,7 +205,7 @@ public class AdministrationCatalogService {
 	}
 
 	@Transactional
-	public JobGroupResponse createJobGroup(JobGroupRequest request) {
+	public JobGroupResponse createJobGroup(@Valid JobGroupRequest request) {
 		Instant now = Instant.now();
 		String id = normalizeRequestedId(request.id(), "JOB-GROUP-");
 		try {
@@ -209,13 +217,13 @@ public class AdministrationCatalogService {
 					timestamp(now), timestamp(now));
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Grupo duplicado", "Já existe um grupo com este identificador.");
+			throw conflict("Grupo duplicado", "Já existe um grupo com este identificador.", exception);
 		}
 		return findJobGroup(id);
 	}
 
 	@Transactional
-	public JobGroupResponse updateJobGroup(String id, JobGroupRequest request) {
+	public JobGroupResponse updateJobGroup(String id, @Valid JobGroupRequest request) {
 		JobGroupResponse current = findJobGroup(id);
 		String requestedKey = normalizeKey(request.key());
 		if (!current.key().equals(requestedKey) && current.routineCount() > 0) {
@@ -230,7 +238,7 @@ public class AdministrationCatalogService {
 					timestamp(Instant.now()), id);
 		}
 		catch (DuplicateKeyException exception) {
-			throw conflict("Grupo duplicado", "Já existe um grupo com este identificador.");
+			throw conflict("Grupo duplicado", "Já existe um grupo com este identificador.", exception);
 		}
 		return findJobGroup(id);
 	}
@@ -251,26 +259,19 @@ public class AdministrationCatalogService {
 		return count != null && count > 0;
 	}
 
-	public List<java.time.LocalDate> holidayDates() {
+	public List<LocalDate> holidayDates() {
 		return jdbc.queryForList("""
 				SELECT calendar_date FROM public.scheduler_calendar_entry
 				WHERE entry_type = 'Feriado'
 				ORDER BY calendar_date
-				""", java.time.LocalDate.class);
+				""", LocalDate.class);
 	}
 
 	private void refreshQuartzCalendars() {
 		try {
+			List<LocalDate> excludedDates = holidayDates();
 			for (String calendarName : scheduler.getCalendarNames()) {
-				if (!(scheduler.getCalendar(calendarName) instanceof HolidayCalendar current)
-						|| !MANAGED_HOLIDAY_CALENDAR_DESCRIPTION.equals(current.getDescription())) continue;
-				HolidayCalendar calendar = new HolidayCalendar();
-				calendar.setDescription(MANAGED_HOLIDAY_CALENDAR_DESCRIPTION);
-				for (java.time.LocalDate date : holidayDates()) {
-					calendar.addExcludedDate(java.util.Date.from(
-							date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()));
-				}
-				scheduler.addCalendar(calendarName, calendar, true, true);
+				refreshManagedCalendar(calendarName, excludedDates);
 			}
 		}
 		catch (SchedulerException exception) {
@@ -279,13 +280,24 @@ public class AdministrationCatalogService {
 		}
 	}
 
+	private void refreshManagedCalendar(String calendarName, List<LocalDate> excludedDates) throws SchedulerException {
+		if (!(scheduler.getCalendar(calendarName) instanceof HolidayCalendar current)
+				|| !MANAGED_HOLIDAY_CALENDAR_DESCRIPTION.equals(current.getDescription())) return;
+		HolidayCalendar calendar = new HolidayCalendar();
+		calendar.setDescription(MANAGED_HOLIDAY_CALENDAR_DESCRIPTION);
+		for (LocalDate date : excludedDates) {
+			calendar.addExcludedDate(Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+		}
+		scheduler.addCalendar(calendarName, calendar, true, true);
+	}
+
 	private CalendarEntryResponse findCalendarEntry(String id) {
 		List<CalendarEntryResponse> entries = jdbc.query("""
 				SELECT id, name, calendar_date, entry_type, scope, location, notes, created_at, updated_at
 				FROM public.scheduler_calendar_entry WHERE id = ?
-				""", AdministrationCatalogService::mapCalendarEntry, id);
+				""", (resultSet, _) -> mapCalendarEntry(resultSet), id);
 		if (entries.isEmpty()) {
-			throw notFound("Data não encontrada", "A data solicitada não existe no calendário.");
+			throw notFound(DATE_NOT_FOUND_TITLE, DATE_NOT_FOUND_DETAIL);
 		}
 		return entries.getFirst();
 	}
@@ -294,7 +306,7 @@ public class AdministrationCatalogService {
 		List<TimeZoneResponse> entries = jdbc.query("""
 				SELECT id, label, time_zone, description, active, is_default, created_at, updated_at
 				FROM public.scheduler_time_zone WHERE id = ?
-				""", AdministrationCatalogService::mapTimeZone, id);
+				""", (resultSet, _) -> mapTimeZone(resultSet), id);
 		if (entries.isEmpty()) {
 			throw notFound("Fuso horário não encontrado", "O fuso horário solicitado não existe.");
 		}
@@ -307,7 +319,7 @@ public class AdministrationCatalogService {
 				       (SELECT count(*) FROM public.qrtz_job_details q
 				        WHERE q.sched_name = ? AND q.job_group = g.group_key) AS routine_count
 				FROM public.scheduler_job_group g WHERE g.id = ?
-				""", AdministrationCatalogService::mapJobGroup, schedulerName(), id);
+				""", (resultSet, _) -> mapJobGroup(resultSet), schedulerName(), id);
 		if (groups.isEmpty()) {
 			throw notFound("Grupo não encontrado", "O grupo de rotinas solicitado não existe.");
 		}
@@ -331,25 +343,26 @@ public class AdministrationCatalogService {
 		}
 	}
 
-	private static CalendarEntryResponse mapCalendarEntry(ResultSet resultSet, int rowNumber) throws SQLException {
+	private static CalendarEntryResponse mapCalendarEntry(ResultSet resultSet) throws SQLException {
 		return new CalendarEntryResponse(
-				resultSet.getString("id"), resultSet.getString("name"), resultSet.getObject("calendar_date", java.time.LocalDate.class),
+				resultSet.getString("id"), resultSet.getString("name"),
+				resultSet.getObject("calendar_date", LocalDate.class),
 				resultSet.getString("entry_type"), resultSet.getString("scope"), resultSet.getString("location"),
-				resultSet.getString("notes"), instant(resultSet, "created_at"), instant(resultSet, "updated_at"));
+				resultSet.getString("notes"), instant(resultSet, CREATED_AT_COLUMN), instant(resultSet, UPDATED_AT_COLUMN));
 	}
 
-	private static TimeZoneResponse mapTimeZone(ResultSet resultSet, int rowNumber) throws SQLException {
+	private static TimeZoneResponse mapTimeZone(ResultSet resultSet) throws SQLException {
 		return new TimeZoneResponse(
 				resultSet.getString("id"), resultSet.getString("label"), resultSet.getString("time_zone"),
 				resultSet.getString("description"), resultSet.getBoolean("active"), resultSet.getBoolean("is_default"),
-				instant(resultSet, "created_at"), instant(resultSet, "updated_at"));
+				instant(resultSet, CREATED_AT_COLUMN), instant(resultSet, UPDATED_AT_COLUMN));
 	}
 
-	private static JobGroupResponse mapJobGroup(ResultSet resultSet, int rowNumber) throws SQLException {
+	private static JobGroupResponse mapJobGroup(ResultSet resultSet) throws SQLException {
 		return new JobGroupResponse(
 				resultSet.getString("id"), resultSet.getString("group_key"), resultSet.getString("name"),
 				resultSet.getString("description"), resultSet.getBoolean("active"), resultSet.getLong("routine_count"),
-				instant(resultSet, "created_at"), instant(resultSet, "updated_at"));
+				instant(resultSet, CREATED_AT_COLUMN), instant(resultSet, UPDATED_AT_COLUMN));
 	}
 
 	private static Instant instant(ResultSet resultSet, String column) throws SQLException {
@@ -374,7 +387,7 @@ public class AdministrationCatalogService {
 	}
 
 	private static String normalizeRequestedId(String id, String prefix) {
-		return id == null || id.isBlank() ? prefix + UUID.randomUUID() : id.trim();
+		return (id == null || id.isBlank()) ? prefix + UUID.randomUUID() : id.trim();
 	}
 
 	private static void validateCalendarLocation(String scope, String location) {
@@ -390,12 +403,16 @@ public class AdministrationCatalogService {
 		}
 		catch (ZoneRulesException exception) {
 			throw ApplicationProblemException.invalidInput("Fuso horário inválido",
-					"Informe um identificador IANA de fuso horário válido.");
+					"Informe um identificador IANA de fuso horário válido.", exception);
 		}
 	}
 
 	private static ApplicationProblemException conflict(String title, String detail) {
 		return ApplicationProblemException.conflict(title, detail);
+	}
+
+	private static ApplicationProblemException conflict(String title, String detail, Throwable cause) {
+		return ApplicationProblemException.conflict(title, detail, cause);
 	}
 
 	private static ApplicationProblemException notFound(String title, String detail) {

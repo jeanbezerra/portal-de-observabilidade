@@ -28,7 +28,7 @@ public class QuartzJobFactoryConfiguration {
 
 		@Override
 		public Job newJob(TriggerFiredBundle bundle, Scheduler scheduler) {
-			return (Job) beanFactory.createBean(bundle.getJobDetail().getJobClass());
+			return beanFactory.createBean(bundle.getJobDetail().getJobClass());
 		}
 
 		@Override

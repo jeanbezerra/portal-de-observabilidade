@@ -47,22 +47,30 @@ class HttpRequestJobExecutorTlsTests {
 
 	@AfterAll
 	static void stopTargetServer() {
-		if (targetServer != null) targetServer.stop(0);
+		if (targetServer != null) {
+			targetServer.stop(0);
+		}
 	}
 
 	@Test
 	void shouldUseInsecureTlsOnlyWhenExplicitlyEnabled() throws Exception {
-		HttpRequestJobExecutor executor = new HttpRequestJobExecutor(null, null, null, null, "*");
+		HttpRequestJobExecutor executor = new HttpRequestJobExecutor(null, null, null, null, "*", true);
+		HttpRequestJobExecutor secureExecutor = new HttpRequestJobExecutor(null, null, null, null, "*", false);
 		URI uri = URI.create("https://127.0.0.1:" + targetServer.getAddress().getPort() + "/health");
 		HttpRequest request = HttpRequest.newBuilder(uri).GET().build();
+		HttpResponse.BodyHandler<Void> discardBody = HttpResponse.BodyHandlers.discarding();
+		HttpRequestConfiguration insecureConfiguration = configuration(uri, true);
 
 		try (HttpClient strictClient = executor.buildClient(configuration(uri, false))) {
-			assertThatThrownBy(() -> strictClient.send(request, HttpResponse.BodyHandlers.discarding()))
+			assertThatThrownBy(() -> strictClient.send(request, discardBody))
 					.isInstanceOf(SSLException.class);
 		}
+		assertThatThrownBy(() -> secureExecutor.buildClient(insecureConfiguration))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("habilita explicitamente");
 
-		try (HttpClient insecureClient = executor.buildClient(configuration(uri, true))) {
-			HttpResponse<Void> response = insecureClient.send(request, HttpResponse.BodyHandlers.discarding());
+		try (HttpClient insecureClient = executor.buildClient(insecureConfiguration)) {
+			HttpResponse<Void> response = insecureClient.send(request, discardBody);
 			assertThat(response.statusCode()).isEqualTo(204);
 		}
 	}

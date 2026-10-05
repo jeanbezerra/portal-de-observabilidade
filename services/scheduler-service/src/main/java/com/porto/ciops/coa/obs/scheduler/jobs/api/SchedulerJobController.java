@@ -1,5 +1,6 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.api;
 
+import com.porto.ciops.coa.obs.scheduler.jobs.application.SchedulerBulkJobActionService;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.SchedulerJobService;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.BulkJobActionRequest;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.BulkJobActionResponse;
@@ -34,9 +35,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class SchedulerJobController {
 
 	private final SchedulerJobService service;
+	private final SchedulerBulkJobActionService bulkActions;
 
-	public SchedulerJobController(SchedulerJobService service) {
+	/**
+	 * Creates the HTTP adapter for single-job and bulk scheduler operations.
+	 *
+	 * @param service application service for individual job operations
+	 * @param bulkActions application service for resilient bulk actions
+	 */
+	public SchedulerJobController(SchedulerJobService service, SchedulerBulkJobActionService bulkActions) {
 		this.service = service;
+		this.bulkActions = bulkActions;
 	}
 
 	@GetMapping("/jobs")
@@ -118,7 +127,7 @@ public class SchedulerJobController {
 	@PostMapping("/jobs/actions/{action}")
 	@Operation(summary = "Executar uma ação em lote")
 	BulkJobActionResponse bulkAction(@PathVariable String action, @Valid @RequestBody BulkJobActionRequest request) {
-		return service.bulkAction(request.jobs(), action);
+		return bulkActions.execute(request.jobs(), action);
 	}
 
 	@GetMapping("/executions")

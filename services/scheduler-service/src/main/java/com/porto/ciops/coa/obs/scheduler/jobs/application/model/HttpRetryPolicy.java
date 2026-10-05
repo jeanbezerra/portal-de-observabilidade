@@ -10,7 +10,13 @@ import java.util.List;
 
 public record HttpRetryPolicy(
 		@Min(1) @Max(5) int maxAttempts,
-		@Min(0) @Max(60000) long initialDelayMillis,
+		@Min(0) @Max(60_000) long initialDelayMillis,
 		@DecimalMin("1.0") @DecimalMax("5.0") double backoffMultiplier,
-		@NotNull @Size(max = 100) List<@Min(100) @Max(599) Integer> statusCodes) {
+		@NotNull @Size(max = 100) List<Integer> statusCodes) {
+
+	public HttpRetryPolicy {
+		if (statusCodes != null) {
+			statusCodes = List.copyOf(statusCodes);
+		}
+	}
 }

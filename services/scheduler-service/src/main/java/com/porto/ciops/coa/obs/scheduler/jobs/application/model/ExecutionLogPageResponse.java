@@ -14,4 +14,9 @@ public record ExecutionLogPageResponse(
 		long warningCount,
 		long errorCount,
 		List<ExecutionLogExecutionResponse> executions) {
+
+	public ExecutionLogPageResponse {
+		items = List.copyOf(items);
+		executions = List.copyOf(executions);
+	}
 }

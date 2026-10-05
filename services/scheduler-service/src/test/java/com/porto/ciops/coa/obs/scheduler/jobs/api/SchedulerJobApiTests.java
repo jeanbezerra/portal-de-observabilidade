@@ -31,7 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 class SchedulerJobApiTests {
 	private static HttpServer targetServer;
-	private static final AtomicReference<String> receivedRequest = new AtomicReference<>();
+	private static final AtomicReference<String> RECEIVED_REQUEST = new AtomicReference<>();
 	private static volatile CountDownLatch requestReceived;
 
 	@Autowired
@@ -45,7 +45,7 @@ class SchedulerJobApiTests {
 		targetServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		targetServer.createContext("/jobs", exchange -> {
 			String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-			receivedRequest.set(exchange.getRequestMethod() + " " + exchange.getRequestURI() + " "
+			RECEIVED_REQUEST.set(exchange.getRequestMethod() + " " + exchange.getRequestURI() + " "
 					+ exchange.getRequestHeaders().getFirst("X-Origin") + " " + body);
 			byte[] response = "{\"accepted\":true}".getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -92,7 +92,7 @@ class SchedulerJobApiTests {
 	@Test
 	void shouldManageQuartzJobThroughApi() throws Exception {
 		requestReceived = new CountDownLatch(1);
-		receivedRequest.set(null);
+		RECEIVED_REQUEST.set(null);
 		String request = """
 				{
 				  "name": "rotina-integration-test",
@@ -157,10 +157,10 @@ class SchedulerJobApiTests {
 
 		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-integration-test/trigger"))
 				.andExpect(status().isOk());
-		if (!requestReceived.await(5, TimeUnit.SECONDS)) {
-			throw new AssertionError("A API HTTP de teste não recebeu a execução do job.");
-		}
-		org.assertj.core.api.Assertions.assertThat(receivedRequest.get())
+		org.assertj.core.api.Assertions.assertThat(requestReceived.await(5, TimeUnit.SECONDS))
+				.as("a API HTTP de teste deve receber a execução do job")
+				.isTrue();
+		org.assertj.core.api.Assertions.assertThat(RECEIVED_REQUEST.get())
 				.contains("PUT /jobs?origem=edited editor", "\"message\":\"atualizado\"");
 		waitForExecutionResult("plataforma", "rotina-integration-test", "SUCCESS", 1);
 
@@ -289,9 +289,9 @@ class SchedulerJobApiTests {
 
 		mockMvc.perform(post("/api/v1/jobs/plataforma/rotina-failure-log-test/trigger"))
 				.andExpect(status().isOk());
-		if (!requestReceived.await(5, TimeUnit.SECONDS)) {
-			throw new AssertionError("A API HTTP de teste não recebeu a execução que deveria falhar.");
-		}
+		org.assertj.core.api.Assertions.assertThat(requestReceived.await(5, TimeUnit.SECONDS))
+				.as("a API HTTP de teste deve receber a execução que deveria falhar")
+				.isTrue();
 
 		String executionLogs = waitForExecutionLog(
 				"plataforma", "rotina-failure-log-test", "\"level\":\"ERROR\"");

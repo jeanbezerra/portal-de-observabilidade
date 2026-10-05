@@ -5,18 +5,16 @@ import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpAuthenticati
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpRequestConfiguration;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpRequestParameter;
 import com.porto.ciops.coa.obs.scheduler.jobs.application.model.HttpRetryPolicy;
+import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.Socket;
+import java.io.Serial;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -24,11 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
-import javax.net.ssl.SSLEngine;
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509ExtendedTrustManager;
 import org.quartz.JobKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,59 +34,41 @@ import tools.jackson.databind.ObjectMapper;
 public class HttpRequestJobExecutor {
 
 	private static final int OAUTH_RESPONSE_LIMIT = 1_000_000;
-	private static final X509ExtendedTrustManager TRUST_ALL_CERTIFICATES = new X509ExtendedTrustManager() {
-		@Override
-		public void checkClientTrusted(X509Certificate[] chain, String authType) {
-		}
-
-		@Override
-		public void checkServerTrusted(X509Certificate[] chain, String authType) {
-		}
-
-		@Override
-		public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) {
-		}
-
-		@Override
-		public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) {
-		}
-
-		@Override
-		public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
-		}
-
-		@Override
-		public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
-		}
-
-		@Override
-		public X509Certificate[] getAcceptedIssuers() {
-			return new X509Certificate[0];
-		}
-	};
-
+	private static final String LOG_SOURCE = "http-executor";
+	private static final String STATUS_HTTP_PREFIX = "Status HTTP: ";
+	private static final String CONTENT_TYPE_HEADER = "Content-Type";
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
 	private final EnvironmentSecretResolver secrets;
 	private final ExecutionLogRecorder executionLogs;
-	private final List<String> allowedHosts;
+	private final Set<String> allowedHosts;
+	private final boolean allowInsecureTls;
 
 	public HttpRequestJobExecutor(JdbcTemplate jdbc, ObjectMapper objectMapper, EnvironmentSecretResolver secrets,
 			ExecutionLogRecorder executionLogs,
-			@Value("${app.http-executor.allowed-hosts:*}") String allowedHosts) {
+			@Value("${app.http-executor.allowed-hosts:localhost,127.0.0.1}") String allowedHosts,
+			@Value("${app.http-executor.allow-insecure-tls:false}") boolean allowInsecureTls) {
 		this.jdbc = jdbc;
 		this.objectMapper = objectMapper;
 		this.secrets = secrets;
 		this.executionLogs = executionLogs;
 		this.allowedHosts = List.of(allowedHosts.split(",")).stream().map(String::trim)
-				.filter(value -> !value.isEmpty()).map(value -> value.toLowerCase(Locale.ROOT)).toList();
+				.filter(value -> !value.isEmpty()).map(value -> value.toLowerCase(Locale.ROOT))
+				.collect(Collectors.toUnmodifiableSet());
+		this.allowInsecureTls = allowInsecureTls;
 	}
 
 	public String execute(JobKey key, String fireInstanceId) throws IOException, InterruptedException {
 		HttpRequestConfiguration configuration = loadConfiguration(key);
-		HttpClient client = buildClient(configuration);
+		try (HttpClient client = buildClient(configuration)) {
+			return execute(client, configuration, fireInstanceId);
+		}
+	}
+
+	private String execute(HttpClient client, HttpRequestConfiguration configuration, String fireInstanceId)
+			throws IOException, InterruptedException {
 		URI configuredUri = URI.create(configuration.url());
-		executionLogs.info(fireInstanceId, "http-executor", "Configuração HTTP carregada.", """
+		executionLogs.info(fireInstanceId, LOG_SOURCE, "Configuração HTTP carregada.", """
 				Método: %s
 				Destino: %s
 				Autenticação: %s
@@ -110,27 +86,27 @@ public class HttpRequestJobExecutor {
 		IOException lastIoFailure = null;
 
 		for (int attempt = 1; attempt <= retry.maxAttempts(); attempt++) {
-			executionLogs.info(fireInstanceId, "http-executor",
+			executionLogs.info(fireInstanceId, LOG_SOURCE,
 					"Enviando tentativa " + attempt + " de " + retry.maxAttempts() + ".",
 					configuration.method() + " " + safeTarget(uri));
 			try {
 				HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
 				byte[] responseBody = readLimited(response.body(), configuration.maxResponseBytes());
 				if (retry.statusCodes().contains(response.statusCode()) && attempt < retry.maxAttempts()) {
-					executionLogs.warn(fireInstanceId, "http-executor",
+					executionLogs.warn(fireInstanceId, LOG_SOURCE,
 							"A tentativa recebeu um status configurado para nova tentativa.",
-							"Status HTTP: " + response.statusCode() + "\nNova tentativa em: " + delayMillis + " ms");
+							STATUS_HTTP_PREFIX + response.statusCode() + "\nNova tentativa em: " + delayMillis + " ms");
 					delay(delayMillis);
 					delayMillis = nextDelay(delayMillis, retry.backoffMultiplier());
 					continue;
 				}
 				if (!isExpectedStatus(response.statusCode(), configuration.expectedStatusCodes())) {
 					UnexpectedHttpStatusException failure = new UnexpectedHttpStatusException(response.statusCode());
-					executionLogs.error(fireInstanceId, "http-executor", failure.getMessage(), failure);
+					executionLogs.error(fireInstanceId, LOG_SOURCE, failure.getMessage(), failure);
 					throw failure;
 				}
-				executionLogs.info(fireInstanceId, "http-executor", "Requisição HTTP concluída com sucesso.",
-						"Status HTTP: " + response.statusCode() + "\nBytes recebidos: " + responseBody.length
+				executionLogs.info(fireInstanceId, LOG_SOURCE, "Requisição HTTP concluída com sucesso.",
+						STATUS_HTTP_PREFIX + response.statusCode() + "\nBytes recebidos: " + responseBody.length
 								+ "\nTentativa: " + attempt + " de " + retry.maxAttempts());
 				return "HTTP " + response.statusCode() + " · " + responseBody.length
 						+ " bytes recebidos · tentativa " + attempt + " de " + retry.maxAttempts() + ".";
@@ -140,7 +116,7 @@ public class HttpRequestJobExecutor {
 			}
 			catch (IOException exception) {
 				IOException failure = exception;
-				if (!configuration.ignoreTlsValidation() && exception instanceof SSLException) {
+				if (Boolean.FALSE.equals(configuration.ignoreTlsValidation()) && exception instanceof SSLException) {
 					failure = new IOException(
 							"Falha na conexão SSL/TLS. Verifique o certificado e o hostname do servidor. "
 									+ "Para destinos internos controlados, habilite a opção de ignorar a validação SSL/TLS.",
@@ -148,11 +124,11 @@ public class HttpRequestJobExecutor {
 				}
 				lastIoFailure = failure;
 				if (attempt == retry.maxAttempts()) {
-					executionLogs.error(fireInstanceId, "http-executor",
+					executionLogs.error(fireInstanceId, LOG_SOURCE,
 							"A requisição HTTP falhou após " + attempt + " tentativa(s).", failure);
 					break;
 				}
-				executionLogs.warn(fireInstanceId, "http-executor",
+				executionLogs.warn(fireInstanceId, LOG_SOURCE,
 						"A tentativa falhou e será repetida.",
 						failure.getClass().getSimpleName() + ": " + failure.getMessage()
 								+ "\nNova tentativa em: " + delayMillis + " ms");
@@ -181,7 +157,7 @@ public class HttpRequestJobExecutor {
 		}
 	}
 
-	HttpClient buildClient(HttpRequestConfiguration configuration) {
+	HttpClient buildClient(@Valid HttpRequestConfiguration configuration) {
 		if ("NORMAL".equals(configuration.redirectPolicy()) && !allowedHosts.contains("*")) {
 			throw new IllegalStateException(
 					"Redirecionamentos exigem HTTP_EXECUTOR_ALLOWED_HOSTS=* para evitar saída a hosts não autorizados.");
@@ -190,19 +166,14 @@ public class HttpRequestJobExecutor {
 				.connectTimeout(Duration.ofSeconds(configuration.connectTimeoutSeconds()))
 				.followRedirects(HttpClient.Redirect.valueOf(configuration.redirectPolicy()))
 				.version(HttpClient.Version.valueOf(configuration.httpVersion()));
-		if (configuration.ignoreTlsValidation()) builder.sslContext(insecureTlsContext());
+		if (Boolean.TRUE.equals(configuration.ignoreTlsValidation())) {
+			if (!allowInsecureTls) {
+				throw new IllegalStateException(
+						"A validação SSL/TLS só pode ser ignorada quando o serviço habilita explicitamente essa opção.");
+			}
+			builder.sslContext(InsecureTlsSupport.createContext());
+		}
 		return builder.build();
-	}
-
-	private static SSLContext insecureTlsContext() {
-		try {
-			SSLContext context = SSLContext.getInstance("TLS");
-			context.init(null, new TrustManager[] { TRUST_ALL_CERTIFICATES }, new SecureRandom());
-			return context;
-		}
-		catch (GeneralSecurityException exception) {
-			throw new IllegalStateException("Não foi possível configurar o modo SSL/TLS inseguro.", exception);
-		}
 	}
 
 	private HttpRequest buildRequest(HttpRequestConfiguration configuration, URI uri, String authorization) {
@@ -230,9 +201,9 @@ public class HttpRequestJobExecutor {
 					encodeParameters(configuration.formParameters()), StandardCharsets.UTF_8);
 			default -> HttpRequest.BodyPublishers.noBody();
 		};
-		if (!"NONE".equals(configuration.bodyType()) && !hasHeader(configuration.headers(), "Content-Type")) {
+		if (!"NONE".equals(configuration.bodyType()) && !hasHeader(configuration.headers(), CONTENT_TYPE_HEADER)) {
 			String contentType = contentType(configuration);
-			if (!contentType.isBlank()) builder.header("Content-Type", contentType);
+			if (!contentType.isBlank()) builder.header(CONTENT_TYPE_HEADER, contentType);
 		}
 		return builder.method(configuration.method(), body).build();
 	}
@@ -264,7 +235,7 @@ public class HttpRequestJobExecutor {
 			HttpAuthentication authentication, String fireInstanceId) throws IOException, InterruptedException {
 		URI tokenUri = URI.create(authentication.tokenUrl());
 		ensureTargetAllowed(tokenUri);
-		executionLogs.info(fireInstanceId, "http-executor", "Solicitando token OAuth 2.0.",
+		executionLogs.info(fireInstanceId, LOG_SOURCE, "Solicitando token OAuth 2.0.",
 				"Destino: " + safeTarget(tokenUri));
 		List<HttpRequestParameter> tokenParameters = new ArrayList<>();
 		tokenParameters.add(new HttpRequestParameter("grant_type", "client_credentials", null));
@@ -279,7 +250,7 @@ public class HttpRequestJobExecutor {
 		HttpRequest.Builder tokenRequest = HttpRequest.newBuilder(tokenUri)
 				.timeout(Duration.ofSeconds(configuration.requestTimeoutSeconds()))
 				.header("Accept", "application/json")
-				.header("Content-Type", "application/x-www-form-urlencoded");
+				.header(CONTENT_TYPE_HEADER, "application/x-www-form-urlencoded");
 		if ("REQUEST_BODY".equals(authentication.clientAuthenticationMethod())) {
 			tokenParameters.add(new HttpRequestParameter("client_id", authentication.clientId(), null));
 			tokenParameters.add(new HttpRequestParameter("client_secret",
@@ -297,8 +268,8 @@ public class HttpRequestJobExecutor {
 		if (response.statusCode() < 200 || response.statusCode() > 299) {
 			throw new IOException("O servidor OAuth 2.0 respondeu com status HTTP " + response.statusCode() + ".");
 		}
-		executionLogs.info(fireInstanceId, "http-executor", "Token OAuth 2.0 obtido.",
-				"Status HTTP: " + response.statusCode() + "\nBytes recebidos: " + body.length);
+		executionLogs.info(fireInstanceId, LOG_SOURCE, "Token OAuth 2.0 obtido.",
+				STATUS_HTTP_PREFIX + response.statusCode() + "\nBytes recebidos: " + body.length);
 		JsonNode payload = objectMapper.readTree(body);
 		String accessToken = payload.path("access_token").stringValue("");
 		if (accessToken.isBlank()) throw new IOException("A resposta OAuth 2.0 não contém access_token.");
@@ -328,6 +299,9 @@ public class HttpRequestJobExecutor {
 	}
 
 	private void ensureTargetAllowed(URI uri) {
+		if (uri.getHost() == null) {
+			throw new IllegalStateException("O destino HTTP não possui um host válido.");
+		}
 		String host = uri.getHost().toLowerCase(Locale.ROOT);
 		boolean allowed = allowedHosts.stream().anyMatch(pattern -> "*".equals(pattern)
 				|| host.equals(pattern) || (pattern.startsWith("*.") && host.endsWith(pattern.substring(1))));
@@ -382,6 +356,9 @@ public class HttpRequestJobExecutor {
 	}
 
 	private static final class UnexpectedHttpStatusException extends IOException {
+
+		@Serial
+		private static final long serialVersionUID = 1L;
 
 		private UnexpectedHttpStatusException(int statusCode) {
 			super("A API respondeu com status HTTP " + statusCode + ".");

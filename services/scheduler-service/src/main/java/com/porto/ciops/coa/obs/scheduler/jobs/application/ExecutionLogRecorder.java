@@ -1,7 +1,5 @@
 package com.porto.ciops.coa.obs.scheduler.jobs.application;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.regex.Pattern;
@@ -16,6 +14,8 @@ public class ExecutionLogRecorder {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionLogRecorder.class);
 	private static final int MAX_MESSAGE_LENGTH = 1_000;
 	private static final int MAX_DETAILS_LENGTH = 20_000;
+	private static final int MAX_CAUSE_DEPTH = 8;
+	private static final int MAX_STACK_FRAMES = 50;
 	private static final Pattern URL_QUERY = Pattern.compile("(?i)(https?://[^\\s?#]+)\\?[^\\s#]*");
 	private static final Pattern SENSITIVE_VALUE = Pattern.compile(
 			"(?im)(authorization|cookie|set-cookie|api[-_ ]?key|token|secret|password)(\\s*[:=]\\s*)[^\\r\\n]+");
@@ -27,22 +27,22 @@ public class ExecutionLogRecorder {
 	}
 
 	public void info(String fireInstanceId, String source, String message) {
-		record(fireInstanceId, "INFO", source, message, null);
+		persist(fireInstanceId, "INFO", source, message, null);
 	}
 
 	public void info(String fireInstanceId, String source, String message, String details) {
-		record(fireInstanceId, "INFO", source, message, details);
+		persist(fireInstanceId, "INFO", source, message, details);
 	}
 
 	public void warn(String fireInstanceId, String source, String message, String details) {
-		record(fireInstanceId, "WARN", source, message, details);
+		persist(fireInstanceId, "WARN", source, message, details);
 	}
 
 	public void error(String fireInstanceId, String source, String message, Throwable failure) {
-		record(fireInstanceId, "ERROR", source, message, stackTrace(failure));
+		persist(fireInstanceId, "ERROR", source, message, stackTrace(failure));
 	}
 
-	private void record(String fireInstanceId, String level, String source, String message, String details) {
+	private void persist(String fireInstanceId, String level, String source, String message, String details) {
 		try {
 			jdbc.update("""
 					INSERT INTO public.scheduler_execution_log (
@@ -59,8 +59,25 @@ public class ExecutionLogRecorder {
 
 	private static String stackTrace(Throwable failure) {
 		if (failure == null) return null;
-		StringWriter output = new StringWriter();
-		failure.printStackTrace(new PrintWriter(output));
+		StringBuilder output = new StringBuilder();
+		Throwable current = failure;
+		int causeDepth = 0;
+		int stackFrames = 0;
+		while (current != null && causeDepth < MAX_CAUSE_DEPTH && stackFrames < MAX_STACK_FRAMES) {
+			if (causeDepth > 0) {
+				output.append("Caused by: ");
+			}
+			output.append(current.getClass().getName()).append(System.lineSeparator());
+			for (StackTraceElement element : current.getStackTrace()) {
+				if (stackFrames >= MAX_STACK_FRAMES) {
+					break;
+				}
+				output.append("\tat ").append(element).append(System.lineSeparator());
+				stackFrames++;
+			}
+			current = current.getCause();
+			causeDepth++;
+		}
 		return output.toString();
 	}
 

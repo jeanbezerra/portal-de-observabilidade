@@ -13,8 +13,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Compatibility-only job classes for definitions persisted before HTTP_REQUEST.
  * They are not exposed by the catalog and no new job can be created with them.
+ *
+ * @deprecated retained only so Quartz can deserialize legacy persisted job class names
  */
 @Deprecated(forRemoval = true)
+@SuppressWarnings({"java:S1133", "PMD.MissingStaticMethodInNonInstantiatableClass"})
 public final class ManagedJobs {
 
 	private ManagedJobs() {

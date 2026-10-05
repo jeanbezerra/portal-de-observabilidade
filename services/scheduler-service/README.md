@@ -47,8 +47,15 @@ classe Java para cada rotina.
 
 Senhas, tokens e API keys não são persistidos. A definição usa referências no
 formato `env:NOME_DA_VARIAVEL`, resolvidas apenas no momento da execução. Os
-hosts permitidos podem ser restringidos por `HTTP_EXECUTOR_ALLOWED_HOSTS`, com
-valores exatos ou curingas como `*.internal.example` separados por vírgula.
+hosts permitidos são restringidos por `HTTP_EXECUTOR_ALLOWED_HOSTS`, com valores
+exatos ou curingas como `*.internal.example` separados por vírgula. O padrão local
+aceita somente `localhost` e `127.0.0.1`; use `*` apenas quando a política de rede
+externa já aplicar a mesma restrição.
+
+A desativação da validação de certificado exige duas decisões explícitas: a
+configuração `ignoreTlsValidation` do job e
+`HTTP_EXECUTOR_ALLOW_INSECURE_TLS=true` no serviço. A variável do serviço fica
+desabilitada por padrão e deve ser usada somente para endpoints legados controlados.
 
 O histórico de início, término, recuperação, falha, interrupção e o status HTTP
 final fica nas tabelas administrativas criadas pelas migrations.

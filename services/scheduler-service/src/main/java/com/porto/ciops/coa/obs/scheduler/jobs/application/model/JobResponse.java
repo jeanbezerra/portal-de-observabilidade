@@ -18,4 +18,8 @@ public record JobResponse(
 		ActiveExecutionResponse activeExecution,
 		ExecutionCountsResponse executionCounts,
 		ExecutionSummaryResponse lastExecution) {
+
+	public JobResponse {
+		triggers = List.copyOf(triggers);
+	}
 }
