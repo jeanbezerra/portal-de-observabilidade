@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflow-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: workflow-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  selector:
+    app.kubernetes.io/name: workflow-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: workflow-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workflow-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workflow-service
+        app.kubernetes.io/part-of: observabilidade-portal
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workflow-service
+          image: localhost/observabilidade-portal/workflow-service:local
+          imagePullPolicy: Never
+          env:
+            - name: SERVER_ADDRESS
+              value: 0.0.0.0
+            - name: DB_URL
+              value: jdbc:postgresql://scheduler-postgres:5432/workflow
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: password
+            - name: DB_POOL_MIN_IDLE
+              value: "1"
+            - name: DB_POOL_MAX_SIZE
+              value: "5"
+            - name: KOGITO_SERVICE_URL
+              value: http://workflow-service:8082
+            - name: KOGITO_JOBS_SERVICE_URL
+              value: http://workflow-service:8082
+            - name: KOGITO_DATA_INDEX_URL
+              value: http://workflow-service:8082
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError
+          ports:
+            - name: http
+              containerPort: 8082
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 3
+            failureThreshold: 100
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

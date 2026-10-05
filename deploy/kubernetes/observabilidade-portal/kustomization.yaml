@@ -3,6 +3,10 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - postgres.yaml
-  - scheduler-api.yaml
-  - obs-web.yaml
+  - platform-service.yaml
+  - scheduler-service.yaml
+  - workflow-service.yaml
+  - identity-redis.yaml
+  - identity-access-service.yaml
+  - portal-web.yaml
   - http-route.yaml

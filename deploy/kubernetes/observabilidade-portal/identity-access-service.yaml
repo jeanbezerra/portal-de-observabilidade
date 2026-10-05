@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-access-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: identity-access-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  selector:
+    app.kubernetes.io/name: identity-access-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-access-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: identity-access-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: identity-access-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: identity-access-service
+        app.kubernetes.io/part-of: observabilidade-portal
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: identity-access-service
+          image: localhost/observabilidade-portal/identity-access-service:local
+          imagePullPolicy: Never
+          envFrom:
+            - secretRef:
+                name: identity-access-secrets
+                optional: true
+          env:
+            - name: SERVER_ADDRESS
+              value: 0.0.0.0
+            - name: DB_URL
+              value: jdbc:postgresql://scheduler-postgres:5432/identity_access
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: password
+            - name: DB_POOL_MAX_SIZE
+              value: "5"
+            - name: DB_POOL_MIN_IDLE
+              value: "1"
+            - name: REDIS_HOST
+              value: identity-redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: SESSION_COOKIE_SECURE
+              value: "false"
+            - name: SECURITY_PRODUCTION_MODE
+              value: "false"
+            - name: CORS_ALLOWED_ORIGINS
+              value: http://localhost:30080
+            - name: LOGGING_STRUCTURED_FORMAT
+              value: ecs
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError
+          ports:
+            - name: http
+              containerPort: 8083
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: identity-access-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: identity-access-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: identity-access-service
+  minReplicas: 1
+  maxReplicas: 3
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

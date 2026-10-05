@@ -2,21 +2,21 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Spring Boot-SchedulerApiApplication<scheduler-api>",
+            "name": "Spring Boot-SchedulerServiceApplication<scheduler-service>",
             "request": "launch",
             "cwd": "${workspaceFolder}",
-            "mainClass": "com.porto.ciops.coa.scheduler.api.SchedulerApiApplication",
-            "projectName": "scheduler-api",
+            "mainClass": "com.porto.ciops.coa.obs.scheduler.SchedulerServiceApplication",
+            "projectName": "scheduler-service",
             "args": "",
             "envFile": "${workspaceFolder}/.env"
         },
         {
             "type": "java",
-            "name": "Spring Boot-PlatformApiApplication<platform-api>",
+            "name": "Spring Boot-PlatformServiceApplication<platform-service>",
             "request": "launch",
             "cwd": "${workspaceFolder}",
-            "mainClass": "com.porto.ciops.coa.platform.api.PlatformApiApplication",
-            "projectName": "platform-api",
+            "mainClass": "com.porto.ciops.coa.obs.platform.PlatformServiceApplication",
+            "projectName": "platform-service",
             "args": "",
             "envFile": "${workspaceFolder}/.env"
         }

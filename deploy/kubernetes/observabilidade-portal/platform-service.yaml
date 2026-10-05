@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: platform-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  selector:
+    app.kubernetes.io/name: platform-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-service
+  namespace: observabilidade-portal
+  labels:
+    app.kubernetes.io/name: platform-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: platform-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform-service
+        app.kubernetes.io/part-of: observabilidade-portal
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: platform-service
+          image: localhost/observabilidade-portal/platform-service:local
+          imagePullPolicy: Never
+          env:
+            - name: DB_URL
+              value: r2dbc:postgresql://scheduler-postgres:5432/platform
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: scheduler-database
+                  key: password
+            - name: DB_POOL_MIN_IDLE
+              value: "1"
+            - name: DB_POOL_MAX_SIZE
+              value: "5"
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

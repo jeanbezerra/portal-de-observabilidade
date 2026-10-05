@@ -1,6 +1,6 @@
 # Novo projeto com React Router Framework Mode
 
-[Voltar ao setup principal](./README.md#fluxo-b--obs-web-ainda-está-vazio)
+[Voltar ao setup principal](./README.md#fluxo-b--portal-web-ainda-está-vazio)
 
 Use esta estratégia para o portal quando houver roteamento, renderização no servidor, carregamento de dados por rota ou possibilidade de crescimento além de uma SPA simples. O Framework Mode usa Vite internamente, mas acrescenta convenções de framework, rotas tipadas, divisão de código e estratégias de renderização. O template oficial habilita SSR por padrão.
 
@@ -14,7 +14,7 @@ Use esta estratégia para o portal quando houver roteamento, renderização no s
 | Ambiente de execução | Node.js `>=22.22.0` e NPM `>=10` | Declarado em `package.json`; `.nvmrc` registra a versão usada na criação. |
 | Instalação | Manual e visível | `--no-install`, seguido por `npm install`. |
 | Interação | Sem perguntas | `--yes`. |
-| Git | Não criar repositório interno | `--no-git-init`, pois `obs-web` pertence ao repositório principal. |
+| Git | Não criar repositório interno | `--no-git-init`, pois `apps/portal-web` pertence ao repositório principal. |
 | Configuração para agentes de IA | Não gerar | `--no-agent-skills`; isso não remove a skill Fluent UI mantida no repositório. |
 | Linguagem | TypeScript | O template oficial é TypeScript. |
 | TypeScript estrito | Ativado | O template declara `strict: true`; não o desative. |
@@ -29,7 +29,7 @@ Use esta estratégia para o portal quando houver roteamento, renderização no s
 
 ## 1. Confirmar os pré-requisitos
 
-Execute dentro de `obs-web`:
+Execute dentro de `apps/portal-web`:
 
 ```console
 node --version

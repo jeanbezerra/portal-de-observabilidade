@@ -1,6 +1,6 @@
 # Novo projeto React SPA com Vite
 
-[Voltar ao setup principal](./README.md#fluxo-b--obs-web-ainda-está-vazio)
+[Voltar ao setup principal](./README.md#fluxo-b--portal-web-ainda-está-vazio)
 
 Use esta alternativa apenas para uma aplicação executada integralmente no navegador, sem SSR, carregadores de dados (`loaders`) ou ações (`actions`) no servidor e sem as convenções completas de um framework React. O Vite fornece o ambiente de desenvolvimento e a compilação, mas decisões como roteamento, carregamento de dados e estratégia de implantação continuam sob responsabilidade da equipe.
 
@@ -29,7 +29,7 @@ Use esta alternativa apenas para uma aplicação executada integralmente no nave
 
 ## 1. Confirmar os pré-requisitos
 
-Execute dentro de `obs-web`:
+Execute dentro de `apps/portal-web`:
 
 ```console
 node --version

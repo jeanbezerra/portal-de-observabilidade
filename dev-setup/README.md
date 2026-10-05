@@ -80,7 +80,7 @@ dir
 code .
 ```
 
-A raiz aberta deve conter pelo menos os diretórios `obs-web`, `obs-api`, `obs-db` e `dev-setup`.
+A raiz aberta deve conter pelo menos os diretórios `apps`, `services`, `obs-db` e `dev-setup`.
 
 ## 4. Instalar as extensões do VS Code
 
@@ -179,7 +179,7 @@ ls
 git status
 ```
 
-A raiz deve conter `obs-web`, `obs-api`, `obs-db` e `dev-setup`. Clone o repositório no Ubuntu, e não no sistema de arquivos do Windows, quando o código for executado pelo host remoto.
+A raiz deve conter `apps`, `services`, `obs-db` e `dev-setup`. Clone o repositório no Ubuntu, e não no sistema de arquivos do Windows, quando o código for executado pelo host remoto.
 
 ## 6. Conectar o VS Code ao Ubuntu por SSH
 
@@ -254,14 +254,14 @@ Para aplicações Web, instale o [React Developer Tools](https://react.dev/learn
 
 Não execute `npm install --global react-devtools` no fluxo Web comum. A versão global é destinada principalmente a navegadores sem extensão compatível e exige configuração adicional.
 
-## 8. Preparar `obs-web`
+## 8. Preparar `apps/portal-web`
 
 Execute esta seção no ambiente em que a aplicação rodará: Windows local ou terminal Bash da janela Ubuntu Remote. Não instale as dependências nos dois sistemas para compartilhar o mesmo diretório `node_modules`.
 
 Entre no diretório da aplicação:
 
 ```console
-cd obs-web
+cd apps/portal-web
 ```
 
 Escolha apenas um dos fluxos abaixo.
@@ -277,15 +277,15 @@ npm run dev
 
 `npm ci` recria `node_modules` a partir de `package-lock.json`. Se ele informar divergência entre `package.json` e o lockfile, não edite nem apague o lockfile manualmente; confirme a branch ou a alteração de dependências com a equipe.
 
-### Fluxo B — `obs-web` ainda está vazio
+### Fluxo B — `portal-web` ainda está vazio
 
 Escolha a estratégia antes de gerar qualquer arquivo. O [React Router Framework Mode](./react-router-framework.md) é o padrão recomendado para o portal porque já estrutura roteamento, rotas tipadas, carregamento de dados, divisão de código e SSR; escolha o [Vite para SPA](./vite-spa.md) somente quando a aplicação for exclusivamente cliente, não precisar de SSR e a equipe aceitar configurar roteamento e recursos de framework separadamente. As duas estratégias usam React, TypeScript, Node.js, NPM, Vite no processo de desenvolvimento e Microsoft Fluent UI React v9, mas não devem ser combinadas nem executadas uma depois da outra no mesmo diretório.
 
-Abra o guia escolhido e execute todos os passos dele. Não use `--overwrite`: se `obs-web` já contiver arquivos, volte ao Fluxo A ou confirme a origem desses arquivos com a equipe.
+Abra o guia escolhido e execute todos os passos dele. Não use `--overwrite`: se `apps/portal-web` já contiver arquivos, volte ao Fluxo A ou confirme a origem desses arquivos com a equipe.
 
 ## 9. Iniciar e validar a aplicação
 
-Ainda dentro de `obs-web`, inicie o servidor de desenvolvimento:
+Ainda dentro de `apps/portal-web`, inicie o servidor de desenvolvimento:
 
 ```console
 npm run dev
@@ -369,7 +369,7 @@ No CMD, os comandos normais continuam sendo `npm`, `npm ci` e `npm run dev`.
 
 ### O NPM não encontrou `package.json`
 
-Confirme que o terminal está em `obs-web`:
+Confirme que o terminal está em `apps/portal-web`:
 
 PowerShell:
 
@@ -409,7 +409,7 @@ npm config get registry
 
 ### ESLint ou Prettier não funciona no VS Code
 
-Com o terminal em `obs-web`, confirme as ferramentas locais:
+Com o terminal em `apps/portal-web`, confirme as ferramentas locais:
 
 ```console
 npm ls eslint prettier --depth=0
@@ -483,7 +483,7 @@ Depois, encaminhe essa porta pela visualização **Ports** do VS Code. Use a URL
 - [ ] Para Ubuntu Remote, Node.js e NPM são fornecidos pelo NVM sem uso de `sudo npm`.
 - [ ] React Developer Tools está instalado no navegador.
 - [ ] A estratégia de projeto foi registrada: React Router Framework Mode ou Vite para SPA.
-- [ ] `obs-web/package.json` e `obs-web/package-lock.json` existem.
+- [ ] `apps/portal-web/package.json` e `apps/portal-web/package-lock.json` existem.
 - [ ] As dependências foram instaladas com `npm ci` ou `npm install` no fluxo de criação.
 - [ ] `npm run dev` inicia a aplicação.
 - [ ] `npm run lint`, Prettier e `npm run build` são aprovados.

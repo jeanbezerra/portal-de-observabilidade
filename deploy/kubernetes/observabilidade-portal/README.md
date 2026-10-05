@@ -1,83 +1,109 @@
 # Deployment local no Kubernetes WSL
 
-Este overlay publica o portal no namespace `observabilidade-portal` usando o
-Gateway `gateway-system/wsl-gateway` já existente no cluster.
+Este overlay publica a solução no namespace `observabilidade-portal` usando o Gateway
+`gateway-system/wsl-gateway` existente no cluster.
 
-## Rollout automatizado
+## Scripts automatizados
 
-Na raiz do repositório, execute um dos scripts abaixo no PowerShell:
+Execute na raiz do repositório:
 
 ```powershell
-# Reconstrói, importa e reinicia somente o frontend.
-.\rollout-obs-web.ps1
+# Compila e testa todos os componentes sem fazer deploy.
+.\build-all.ps1
 
-# Reconstrói o frontend e a Scheduler API e executa o rollout completo.
+# Recompila e publica apenas um componente.
+.\rollout-platform-service.ps1
+.\rollout-scheduler-service.ps1
+.\rollout-workflow-service.ps1
+.\rollout-identity-access-service.ps1
+.\rollout-portal-web.ps1
+
+# Constrói, publica, aguarda e testa a solução completa.
 .\rollout-all.ps1
+
+# Repete os smoke tests sem reconstruir imagens.
+.\test-integrations.ps1
 ```
 
 Os scripts usam por padrão a distribuição WSL `Ubuntu-26.04`, o namespace
-`observabilidade-portal` e as tags locais descritas abaixo. Os valores podem
-ser personalizados por parâmetro:
+`observabilidade-portal` e imagens locais. Os valores podem ser alterados por parâmetro:
 
 ```powershell
-.\rollout-all.ps1 -WslDistribution Ubuntu-26.04 -TimeoutSeconds 300
+.\rollout-all.ps1 -WslDistribution Ubuntu-26.04 -TimeoutSeconds 600
 ```
 
-O rollout completo aplica todo o overlay e reinicia os deployments
-`scheduler-api` e `obs-web`. O StatefulSet do PostgreSQL é aguardado e só sofre
-rollout quando uma mudança no manifesto aplicado exigir isso.
+O rollout completo valida quatro serviços Java e o portal, gera e importa cinco imagens,
+prepara os bancos lógicos `platform`, `workflow` e `identity_access`, aplica o overlay,
+reinicia os deployments e executa smoke tests HTTP internos. Use `-SkipBuild`,
+`-SkipImageBuild` ou `-SkipSmokeTests` somente quando os artefatos correspondentes já
+tiverem sido validados ou importados.
 
 ## Imagens locais
 
-As imagens usam as tags abaixo e `imagePullPolicy: Never`:
+Os workloads usam `imagePullPolicy: Never` e as tags:
 
-- `localhost/observabilidade-portal/obs-web:local`
-- `localhost/observabilidade-portal/scheduler-api:local`
+- `localhost/observabilidade-portal/portal-web:local`
+- `localhost/observabilidade-portal/platform-service:local`
+- `localhost/observabilidade-portal/scheduler-service:local`
+- `localhost/observabilidade-portal/workflow-service:local`
+- `localhost/observabilidade-portal/identity-access-service:local`
 
-Elas precisam estar no containerd do nó `kubernetes-wsl` antes da aplicação dos
-manifests.
+Os scripts `rollout-*.ps1` constroem com Buildah, exportam cada imagem para um arquivo
+temporário, importam no containerd do Kubernetes e removem o arquivo automaticamente.
 
-Partindo da raiz do repositório, gere o JAR e as imagens:
+## Credencial e bancos locais
 
-```powershell
-.\obs-api\scheduler-api\mvnw.cmd -q verify
-wsl -d Ubuntu-26.04 -u root -- buildah bud --tag localhost/observabilidade-portal/scheduler-api:local /mnt/c/caminho/do/repositorio/obs-api/scheduler-api
-wsl -d Ubuntu-26.04 -u root -- buildah bud --tag localhost/observabilidade-portal/obs-web:local /mnt/c/caminho/do/repositorio/obs-web
-```
-
-Exporte as imagens para o containerd do Kubernetes:
+O Secret do PostgreSQL não é versionado. Crie-o antes do primeiro deploy:
 
 ```shell
-sudo buildah push localhost/observabilidade-portal/scheduler-api:local docker-archive:/tmp/scheduler-api-local.tar:localhost/observabilidade-portal/scheduler-api:local
-sudo buildah push localhost/observabilidade-portal/obs-web:local docker-archive:/tmp/obs-web-local.tar:localhost/observabilidade-portal/obs-web:local
-sudo ctr --namespace k8s.io images import /tmp/scheduler-api-local.tar
-sudo ctr --namespace k8s.io images import /tmp/obs-web-local.tar
-sudo rm -f /tmp/scheduler-api-local.tar /tmp/obs-web-local.tar
-```
-
-## Credencial do banco
-
-O Secret não é versionado. Crie-o antes do primeiro deploy:
-
-```shell
+kubectl apply -f deploy/kubernetes/observabilidade-portal/namespace.yaml
 kubectl create secret generic scheduler-database \
   --namespace observabilidade-portal \
   --from-literal=username=scheduler \
   --from-literal=password='<senha-local-forte>'
 ```
 
-## Aplicação
+O ambiente local usa uma instância PostgreSQL com os bancos `scheduler`, `platform`,
+`workflow` e `identity_access`. Ambientes superiores devem usar credenciais e políticas
+de acesso independentes por serviço.
+
+O `identity-access-service` usa o Deployment `identity-redis` para sessão e cache
+reconstruível. O Redis não é fonte de verdade e, por isso, usa `emptyDir` neste ambiente.
+Uma NetworkPolicy permite acesso ao Redis somente pelos pods do serviço de identidade.
+
+Credenciais e certificados dos providers são injetados opcionalmente pelo Secret
+`identity-access-secrets`; as chaves devem seguir os nomes `OBS_SECRET_*` documentados no README do serviço.
+
+## Aplicação e acompanhamento
 
 ```shell
 kubectl apply -k deploy/kubernetes/observabilidade-portal
 kubectl rollout status statefulset/scheduler-postgres -n observabilidade-portal
-kubectl rollout status deployment/scheduler-api -n observabilidade-portal
-kubectl rollout status deployment/obs-web -n observabilidade-portal
+kubectl rollout status deployment/identity-redis -n observabilidade-portal
+kubectl rollout status deployment/identity-access-service -n observabilidade-portal
+kubectl rollout status deployment/platform-service -n observabilidade-portal
+kubectl rollout status deployment/scheduler-service -n observabilidade-portal
+kubectl rollout status deployment/workflow-service -n observabilidade-portal
+kubectl rollout status deployment/portal-web -n observabilidade-portal
 ```
 
-Com o port-forward padrão do cluster ativo, o portal fica disponível em
-`http://localhost:30080`. O Gateway encaminha `/api/v1` para a Scheduler API e
-as demais rotas para o frontend.
+O serviço de identidade possui HPA com mínimo de 1 e máximo de 3 réplicas, baseado em
+70% de utilização de CPU. O cluster precisa ter Metrics Server para realizar o scaling;
+sem métricas, o Deployment continua operando com o mínimo configurado.
+
+## Rotas e testes
+
+```powershell
+.\test-integrations.ps1
+```
+
+O smoke test valida DNS e HTTP internos entre Portal, Scheduler, Platform, Workflow e
+Identity Access. Também testa o portal, o Scheduler e a descoberta pública de provedores
+pelo Gateway em `http://localhost:30080`.
+
+O Gateway encaminha `/api/v1/auth`, `/api/v1/me`, `/api/v1/providers` e
+`/api/v1/authorization` ao `identity-access-service`; o restante de `/api/v1` permanece
+no Scheduler. As demais rotas seguem para o frontend.
 
 O PostgreSQL usa um `PersistentVolume` local com política `Retain` em
 `/var/lib/observabilidade-portal/postgres` no nó WSL.

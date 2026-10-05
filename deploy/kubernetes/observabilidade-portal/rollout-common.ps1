@@ -62,10 +62,7 @@ function Get-WslRepositoryPath {
 function Assert-RolloutPrerequisites {
     param(
         [Parameter(Mandatory)]
-        [string]$Distribution,
-
-        [Parameter(Mandatory)]
-        [string]$Namespace
+        [string]$Distribution
     )
 
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
@@ -88,15 +85,9 @@ function Assert-RolloutPrerequisites {
         '--all',
         '--timeout=30s'
     )
-    Invoke-WslCommand -Distribution $Distribution -Arguments @(
-        'kubectl',
-        'get',
-        'namespace',
-        $Namespace
-    )
 }
 
-function Assert-SchedulerDatabaseSecret {
+function Assert-PortalDatabaseSecret {
     param(
         [Parameter(Mandatory)]
         [string]$Distribution,
@@ -105,7 +96,7 @@ function Assert-SchedulerDatabaseSecret {
         [string]$Namespace
     )
 
-    Write-RolloutStep "Validando a credencial do Scheduler"
+    Write-RolloutStep "Validando a credencial do PostgreSQL local"
     Invoke-WslCommand -Distribution $Distribution -Arguments @(
         'kubectl',
         'get',
@@ -175,28 +166,126 @@ function Build-AndImportLocalImage {
     }
 }
 
-function Build-SchedulerApiArtifact {
+function Build-JavaServiceArtifact {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('platform-service', 'scheduler-service', 'workflow-service', 'identity-access-service')]
+        [string]$ServiceName
+    )
+
+    $serviceDirectory = Join-Path $RepositoryRoot "services\$ServiceName"
+    $mavenWrapper = Join-Path $serviceDirectory 'mvnw.cmd'
+    if (-not (Test-Path -LiteralPath $mavenWrapper)) {
+        throw "Maven Wrapper nao encontrado em $mavenWrapper."
+    }
+
+    Write-RolloutStep "Compilando e testando $ServiceName"
+    Push-Location $serviceDirectory
+    try {
+        & $mavenWrapper -q clean verify
+        if ($LASTEXITCODE -ne 0) {
+            throw "O build do $ServiceName falhou com codigo $LASTEXITCODE."
+        }
+
+        $artifact = Join-Path $serviceDirectory 'target\app.jar'
+        if (-not (Test-Path -LiteralPath $artifact)) {
+            throw "O build do $ServiceName nao gerou target\app.jar."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Build-PortalWebArtifact {
     param(
         [Parameter(Mandatory)]
         [string]$RepositoryRoot
     )
 
-    $schedulerDirectory = Join-Path $RepositoryRoot 'obs-api\scheduler-api'
-    $mavenWrapper = Join-Path $schedulerDirectory 'mvnw.cmd'
-    if (-not (Test-Path -LiteralPath $mavenWrapper)) {
-        throw "Maven Wrapper nao encontrado em $mavenWrapper."
+    $portalDirectory = Join-Path $RepositoryRoot 'apps\portal-web'
+    if (-not (Test-Path -LiteralPath (Join-Path $portalDirectory 'package-lock.json'))) {
+        throw "package-lock.json nao encontrado em $portalDirectory."
     }
 
-    Write-RolloutStep "Compilando e testando scheduler-api"
-    Push-Location $schedulerDirectory
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) {
+        throw 'npm.cmd nao esta disponivel no PATH.'
+    }
+
+    Write-RolloutStep "Instalando e validando portal-web"
+    Push-Location $portalDirectory
     try {
-        & $mavenWrapper -q verify
+        & $npm.Source ci
         if ($LASTEXITCODE -ne 0) {
-            throw "O build do scheduler-api falhou com codigo $LASTEXITCODE."
+            throw "A instalacao do portal-web falhou com codigo $LASTEXITCODE."
+        }
+
+        & $npm.Source run typecheck
+        if ($LASTEXITCODE -ne 0) {
+            throw "O typecheck do portal-web falhou com codigo $LASTEXITCODE."
+        }
+
+        & $npm.Source run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "O build do portal-web falhou com codigo $LASTEXITCODE."
         }
     }
     finally {
         Pop-Location
+    }
+}
+
+function Ensure-PostgresDatabases {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Distribution,
+
+        [Parameter(Mandatory)]
+        [string]$Namespace,
+
+        [Parameter(Mandatory)]
+        [string[]]$Databases
+    )
+
+    Write-RolloutStep "Garantindo bancos logicos: $($Databases -join ', ')"
+    $databaseUser = Get-WslCommandOutput -Distribution $Distribution -Arguments @(
+        'kubectl',
+        'exec',
+        'statefulset/scheduler-postgres',
+        '--namespace',
+        $Namespace,
+        '--container',
+        'postgres',
+        '--',
+        'printenv',
+        'POSTGRES_USER'
+    )
+
+    foreach ($database in $Databases) {
+        & wsl.exe -d $Distribution -u root -- kubectl exec statefulset/scheduler-postgres --namespace $Namespace --container postgres -- psql "--username=$databaseUser" "--dbname=$database" '--command=SELECT/**/1' *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "database/$database unchanged"
+            continue
+        }
+
+        Invoke-WslCommand -Distribution $Distribution -Arguments @(
+            'kubectl',
+            'exec',
+            'statefulset/scheduler-postgres',
+            '--namespace',
+            $Namespace,
+            '--container',
+            'postgres',
+            '--',
+            'createdb',
+            "--username=$databaseUser",
+            $database
+        )
+        Write-Host "database/$database created"
     }
 }
 
@@ -299,10 +388,102 @@ function Show-PortalWorkloads {
     Invoke-WslCommand -Distribution $Distribution -Arguments @(
         'kubectl',
         'get',
-        'deployment,statefulset,pod',
+        'deployment,statefulset,pod,service',
         '--namespace',
         $Namespace,
         '--output',
         'wide'
     )
+}
+
+function Test-PortalIntegrations {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Distribution,
+
+        [Parameter(Mandatory)]
+        [string]$Namespace
+    )
+
+    Write-RolloutStep "Testando integracoes HTTP e DNS entre os componentes"
+    $smokeTest = @'
+const targets = [
+  ['portal-web', 'http://127.0.0.1:3000/'],
+  ['scheduler-service', 'http://scheduler-service:8081/api/v1/scheduler'],
+  ['platform-service', 'http://platform-service:8080/actuator/health/readiness'],
+  ['platform-openapi', 'http://platform-service:8080/api-docs'],
+  ['workflow-service', 'http://workflow-service:8082/actuator/health/readiness'],
+  ['workflow-schema', 'http://workflow-service:8082/approvalRequests/schema'],
+  ['identity-access-service', 'http://identity-access-service:8083/actuator/health/readiness'],
+  ['identity-provider-discovery', 'http://identity-access-service:8083/api/v1/auth/providers'],
+];
+
+(async () => {
+  let failed = false;
+  for (const [name, url] of targets) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      console.log(name + ': HTTP ' + response.status);
+      failed ||= !response.ok;
+    } catch (error) {
+      failed = true;
+      console.error(name + ': ' + error.message);
+    }
+  }
+  process.exit(failed ? 1 : 0);
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+'@
+
+    Invoke-WslCommand -Distribution $Distribution -Arguments @(
+        'kubectl',
+        'exec',
+        'deployment/portal-web',
+        '--namespace',
+        $Namespace,
+        '--',
+        'node',
+        '--input-type=commonjs',
+        '--eval',
+        $smokeTest
+    )
+}
+
+function Remove-LegacyPortalResources {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Distribution,
+
+        [Parameter(Mandatory)]
+        [string]$Namespace
+    )
+
+    Write-RolloutStep "Removendo workloads legados substituidos"
+    Invoke-WslCommand -Distribution $Distribution -Arguments @(
+        'kubectl',
+        'delete',
+        'deployment/obs-web',
+        'service/obs-web',
+        'deployment/scheduler-api',
+        'service/scheduler-api',
+        '--namespace',
+        $Namespace,
+        '--ignore-not-found=true'
+    )
+}
+
+function Show-RolloutDiagnostics {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Distribution,
+
+        [Parameter(Mandatory)]
+        [string]$Namespace
+    )
+
+    Write-Warning "O rollout falhou. Coletando estado e eventos recentes do namespace $Namespace."
+    & wsl.exe -d $Distribution -u root -- kubectl get deployment,statefulset,pod,service --namespace $Namespace --output wide
+    & wsl.exe -d $Distribution -u root -- kubectl get events --namespace $Namespace --sort-by=.lastTimestamp
 }

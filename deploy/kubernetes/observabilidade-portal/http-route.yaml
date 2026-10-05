@@ -13,10 +13,32 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: /api/v1/auth
+        - path:
+            type: PathPrefix
+            value: /api/v1/me
+        - path:
+            type: PathPrefix
+            value: /api/v1/providers
+        - path:
+            type: PathPrefix
+            value: /api/v1/authorization
+        - path:
+            type: PathPrefix
+            value: /saml2
+        - path:
+            type: PathPrefix
+            value: /login/saml2
+      backendRefs:
+        - name: identity-access-service
+          port: 8083
+    - matches:
+        - path:
+            type: PathPrefix
             value: /api/v1
       backendRefs:
-        - name: scheduler-api
+        - name: scheduler-service
           port: 8081
     - backendRefs:
-        - name: obs-web
+        - name: portal-web
           port: 3000
