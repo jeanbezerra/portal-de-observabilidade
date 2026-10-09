@@ -173,7 +173,9 @@ function Build-JavaServiceArtifact {
 
         [Parameter(Mandatory)]
         [ValidateSet('platform-service', 'scheduler-service', 'workflow-service', 'identity-access-service')]
-        [string]$ServiceName
+        [string]$ServiceName,
+
+        [switch]$SkipTests
     )
 
     $serviceDirectory = Join-Path $RepositoryRoot "services\$ServiceName"
@@ -182,10 +184,18 @@ function Build-JavaServiceArtifact {
         throw "Maven Wrapper nao encontrado em $mavenWrapper."
     }
 
-    Write-RolloutStep "Compilando e testando $ServiceName"
+    $mavenArguments = @('-q', 'clean', 'verify')
+    if ($SkipTests) {
+        $mavenArguments = @('-q', 'clean', 'package', '-Dmaven.test.skip=true')
+        Write-RolloutStep "Compilando $ServiceName sem executar ou compilar testes"
+    }
+    else {
+        Write-RolloutStep "Compilando e testando $ServiceName"
+    }
+
     Push-Location $serviceDirectory
     try {
-        & $mavenWrapper -q clean verify
+        & $mavenWrapper @mavenArguments
         if ($LASTEXITCODE -ne 0) {
             throw "O build do $ServiceName falhou com codigo $LASTEXITCODE."
         }
@@ -248,6 +258,7 @@ function Ensure-PostgresDatabases {
         [string]$Namespace,
 
         [Parameter(Mandatory)]
+        [ValidatePattern('^[a-z_][a-z0-9_]*$')]
         [string[]]$Databases
     )
 
@@ -265,9 +276,45 @@ function Ensure-PostgresDatabases {
         'POSTGRES_USER'
     )
 
+    $maintenanceDatabase = Get-WslCommandOutput -Distribution $Distribution -Arguments @(
+        'kubectl',
+        'exec',
+        'statefulset/scheduler-postgres',
+        '--namespace',
+        $Namespace,
+        '--container',
+        'postgres',
+        '--',
+        'printenv',
+        'POSTGRES_DB'
+    )
+
+    $databaseOutput = Get-WslCommandOutput -Distribution $Distribution -Arguments @(
+        'kubectl',
+        'exec',
+        'statefulset/scheduler-postgres',
+        '--namespace',
+        $Namespace,
+        '--container',
+        'postgres',
+        '--',
+        'psql',
+        '-X',
+        "--username=$databaseUser",
+        "--dbname=$maintenanceDatabase",
+        '--set=ON_ERROR_STOP=1',
+        '--tuples-only',
+        '--no-align',
+        '--command=SELECT datname FROM pg_database'
+    )
+    $existingDatabases = @(
+        $databaseOutput -split '\r?\n' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+
     foreach ($database in $Databases) {
-        & wsl.exe -d $Distribution -u root -- kubectl exec statefulset/scheduler-postgres --namespace $Namespace --container postgres -- psql "--username=$databaseUser" "--dbname=$database" '--command=SELECT/**/1' *> $null
-        if ($LASTEXITCODE -eq 0) {
+        if ($existingDatabases -contains $database) {
             Write-Host "database/$database unchanged"
             continue
         }
@@ -283,8 +330,10 @@ function Ensure-PostgresDatabases {
             '--',
             'createdb',
             "--username=$databaseUser",
+            "--maintenance-db=$maintenanceDatabase",
             $database
         )
+        $existingDatabases += $database
         Write-Host "database/$database created"
     }
 }

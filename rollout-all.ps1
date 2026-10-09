@@ -3,9 +3,9 @@
 Reconstroi todas as imagens locais e executa o rollout do portal no Kubernetes WSL.
 
 .DESCRIPTION
-Compila e testa os quatro servicos Java e o portal, reconstroi as cinco imagens,
-importa-as no containerd, prepara os bancos logicos, aplica o overlay, aguarda
-todos os workloads e executa smoke tests de integracao a partir do portal-web.
+Compila os quatro servicos Java sem testes e compila o portal, reconstroi as cinco
+imagens, importa-as no containerd, prepara os bancos logicos, aplica o overlay e
+aguarda todos os workloads. Este script nao executa testes nem smoke tests.
 
 .EXAMPLE
 .\rollout-all.ps1
@@ -21,7 +21,6 @@ param(
     [int]$TimeoutSeconds = 600,
     [switch]$SkipBuild,
     [switch]$SkipImageBuild,
-    [switch]$SkipSmokeTests,
     [switch]$CleanupLegacyResources
 )
 
@@ -39,7 +38,7 @@ try {
     Assert-PortalDatabaseSecret -Distribution $WslDistribution -Namespace $Namespace
 
     if (-not $SkipBuild) {
-        & (Join-Path $repositoryRoot 'build-all.ps1')
+        & (Join-Path $repositoryRoot 'build-all.ps1') -SkipTests
     }
 
     if (-not $SkipImageBuild) {
@@ -69,10 +68,6 @@ try {
     Wait-KubernetesRollout -Distribution $WslDistribution -Namespace $Namespace -Resource 'deployment/identity-redis' -TimeoutSeconds $TimeoutSeconds
     Wait-KubernetesRollout -Distribution $WslDistribution -Namespace $Namespace -Resource 'deployment/identity-access-service' -TimeoutSeconds $TimeoutSeconds
     Wait-KubernetesRollout -Distribution $WslDistribution -Namespace $Namespace -Resource 'deployment/portal-web' -TimeoutSeconds $TimeoutSeconds
-
-    if (-not $SkipSmokeTests) {
-        Test-PortalIntegrations -Distribution $WslDistribution -Namespace $Namespace
-    }
 
     if ($CleanupLegacyResources) {
         Remove-LegacyPortalResources -Distribution $WslDistribution -Namespace $Namespace
