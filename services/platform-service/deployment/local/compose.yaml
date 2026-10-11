@@ -1,0 +1,51 @@
+services:
+  platform-service:
+    build:
+      context: ../..
+      args:
+        SKIP_TESTS: ${SKIP_TESTS:-false}
+    image: platform-service:local
+    ports:
+    - 127.0.0.1:${APP_PORT:-8080}:8080
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: '8080'
+      DB_URL: r2dbc:postgresql://postgres:5432/platform
+      DB_USERNAME: ${DB_USERNAME:-app}
+      DB_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD em deployment/local/.env}
+      DB_POOL_MIN_IDLE: '1'
+      DB_POOL_MAX_SIZE: '5'
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -q -O /dev/null http://127.0.0.1:8080/actuator/health/readiness || exit 1
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+  postgres:
+    image: docker.io/library/postgres:18-alpine
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: ${DB_USERNAME:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD em deployment/local/.env}
+    ports:
+    - 127.0.0.1:${DB_PORT:-54320}:5432
+    volumes:
+    - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  postgres-data: {}

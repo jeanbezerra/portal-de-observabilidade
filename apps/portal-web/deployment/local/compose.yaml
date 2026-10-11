@@ -1,0 +1,22 @@
+services:
+  portal-web:
+    build:
+      context: ../..
+      args:
+        VITE_SCHEDULER_SERVICE_URL: ${SCHEDULER_PUBLIC_URL:-http://localhost:8081}
+    image: portal-web:local
+    ports:
+    - 127.0.0.1:${APP_PORT:-3000}:3000
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12

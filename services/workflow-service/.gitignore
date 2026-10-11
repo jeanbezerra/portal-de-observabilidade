@@ -8,3 +8,10 @@ target/
 .classpath
 .project
 *.iml
+
+# Configuracao de deployment local e segredos do cluster
+.env
+.env.*
+!.env.example
+!.env.*.example
+/deployment/kubernetes/runtime-secret.env

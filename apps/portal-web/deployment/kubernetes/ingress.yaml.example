@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal-web
+  namespace: substitua-o-namespace
+spec:
+  ingressClassName: substitua-a-classe
+  tls:
+  - hosts:
+    - portal-web.example.com
+    secretName: portal-web-tls
+  rules:
+  - host: portal-web.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: portal-web
+            port:
+              number: 3000

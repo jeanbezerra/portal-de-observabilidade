@@ -12,7 +12,8 @@ FROM docker.io/library/node:24-alpine AS build-env
 COPY . /app/
 COPY --from=development-dependencies-env /app/node_modules /app/node_modules
 WORKDIR /app
-RUN npm run build
+ARG VITE_SCHEDULER_SERVICE_URL=
+RUN VITE_SCHEDULER_SERVICE_URL="$VITE_SCHEDULER_SERVICE_URL" npm run typecheck && VITE_SCHEDULER_SERVICE_URL="$VITE_SCHEDULER_SERVICE_URL" npm run build
 
 FROM docker.io/library/node:24-alpine
 COPY ./package.json package-lock.json /app/

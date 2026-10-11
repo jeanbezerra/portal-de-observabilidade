@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-service
+  namespace: __NAMESPACE__
+  labels:
+    app.kubernetes.io/name: scheduler-service
+    app.kubernetes.io/part-of: observabilidade-portal
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scheduler-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduler-service
+        app.kubernetes.io/part-of: observabilidade-portal
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: scheduler-service
+        image: __IMAGE__
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8081
+        startupProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          periodSeconds: 2
+          failureThreshold: 60
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: http
+          periodSeconds: 10
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 768Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: scheduler-service-config
+        - secretRef:
+            name: scheduler-service-runtime
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      imagePullSecrets: []

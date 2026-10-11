@@ -1,9 +1,17 @@
+FROM docker.io/library/eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /build
+RUN apk add --no-cache curl
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
+COPY src src
+ARG SKIP_TESTS=false
+RUN ./mvnw --batch-mode -Dmaven.test.skip=${SKIP_TESTS} verify
+
 FROM docker.io/library/eclipse-temurin:21-jre-alpine
-
-RUN addgroup -S workflow && adduser -S workflow -G workflow -u 10001
+RUN addgroup -S app && adduser -S app -G app -u 10001
 WORKDIR /app
-COPY target/app.jar /app/app.jar
-
+COPY --from=build /build/target/app.jar /app/app.jar
 EXPOSE 8082
 USER 10001:10001
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

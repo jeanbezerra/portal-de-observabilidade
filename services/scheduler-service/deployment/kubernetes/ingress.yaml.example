@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scheduler-service
+  namespace: substitua-o-namespace
+spec:
+  ingressClassName: substitua-a-classe
+  tls:
+  - hosts:
+    - scheduler-service.example.com
+    secretName: scheduler-service-tls
+  rules:
+  - host: scheduler-service.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: scheduler-service
+            port:
+              number: 8081

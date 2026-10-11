@@ -1,0 +1,10 @@
+# Configuração e credenciais locais
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Arquivos temporários do sistema e logs locais
+.DS_Store
+Thumbs.db
+*.log

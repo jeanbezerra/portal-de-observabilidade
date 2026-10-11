@@ -91,3 +91,12 @@ Experimente enviar `approved = $false` na primeira alçada: o processo termina s
 **Atenção — demonstração, não configuração de produção.** `user` e `group` são parâmetros de *impersonação*, não autenticação. Além disso, as rotas de tarefas geradas diretamente sob `/approvalRequests/{id}/...` podem executar transições sem preencher `firstApprover` e, portanto, **não garantem a regra de quatro olhos**; use neste exemplo as rotas `/usertasks/instance/.../transition` mostradas acima. Antes de disponibilizar a API externamente, integre identidade real, restrinja rotas geradas e impeça alterações arbitrárias de variáveis internas do processo. O teste automatizado cobre os dois caminhos de aprovação, a rejeição na primeira alçada e o fluxo HTTP da API de tarefas humanas.
 
 Observação de compatibilidade: o Flyway incluído no Kogito 10.2.0 emite um aviso ao encontrar PostgreSQL 18.x (ele informa suporte testado até 17). A aplicação iniciou, executou migrations e retomou uma tarefa humana após reinício neste PostgreSQL local 18.6; homologue essa combinação antes de usar em produção.
+
+## Execução e deployment
+
+Este componente possui scripts e manifestos próprios. Consulte o [guia de deployment](deployment/README.md) para executar em containers locais ou publicar em um cluster Kubernetes específico.
+
+```powershell
+.\scripts\deploy\local.ps1 -Engine docker
+.\scripts\deploy\rollout.ps1 -Context meu-cluster -Namespace observabilidade -Image registry.example.com/equipe/workflow-service:1.0.0
+```

@@ -20,6 +20,10 @@ ciclo de implantação próprios.
 - Use `<finalidade>-web` para aplicações e mantenha os nomes curtos e estáveis.
 - Cada aplicação é dona de seu `package.json`, lockfile, `Dockerfile`, assets,
   rotas, testes e configuração de execução.
+- Scripts específicos ficam em `scripts/<finalidade>/` dentro da aplicação. O
+  fluxo local usa `scripts/deploy/local.ps1` e o Kubernetes usa
+  `scripts/deploy/rollout.ps1` com contexto explícito. Os YAMLs ficam em
+  `deployment/local/` e `deployment/kubernetes/`, sem bibliotecas da raiz.
 - Uma aplicação não importa código-fonte diretamente de outra aplicação.
 - Código reutilizável só deve migrar para um futuro `packages/<capacidade>`
   quando houver ao menos dois consumidores reais e uma API pública definida.

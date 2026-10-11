@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-service
+  namespace: substitua-o-namespace
+spec:
+  ingressClassName: substitua-a-classe
+  tls:
+  - hosts:
+    - platform-service.example.com
+    secretName: platform-service-tls
+  rules:
+  - host: platform-service.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: platform-service
+            port:
+              number: 8080

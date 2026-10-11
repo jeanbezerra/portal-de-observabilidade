@@ -4,7 +4,7 @@ Portal interno da Porto Seguros para dimensionar, registrar e acompanhar solicit
 
 ## Executar localmente
 
-Consulte o [setup completo do ambiente](../../dev-setup/README.md) caso ainda não tenha o Node.js, o npm ou as extensões recomendadas do Visual Studio Code.
+Para desenvolver fora do container, instale Node.js e NPM. Para executar sem ferramentas de build no host, use o [guia de deployment](deployment/README.md).
 
 ```shell
 npm install
@@ -71,3 +71,12 @@ A aplicação usa React Router Framework Mode com SSR, Fluent UI React v9, token
 ## Padrões técnicos
 
 - [Tags e rastreabilidade do Dynatrace](docs/padrao-tags-dynatrace.md)
+
+## Execução e deployment
+
+Este componente possui scripts e manifestos próprios. Consulte o [guia de deployment](deployment/README.md) para executar em containers locais ou publicar em um cluster Kubernetes específico.
+
+```powershell
+.\scripts\deploy\local.ps1 -Engine docker
+.\scripts\deploy\rollout.ps1 -Context meu-cluster -Namespace observabilidade -Image registry.example.com/equipe/portal-web:1.0.0
+```

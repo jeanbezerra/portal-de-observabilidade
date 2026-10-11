@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Configuracao de deployment local e segredos do cluster
+.env
+.env.*
+!.env.example
+!.env.*.example
+/deployment/kubernetes/runtime-secret.env

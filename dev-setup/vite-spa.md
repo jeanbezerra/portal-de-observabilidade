@@ -93,7 +93,7 @@ npm pkg set scripts.format:check="prettier . --check"
 
 Inclua a configuração recomendada de `eslint-plugin-jsx-a11y` em `eslint.config.*`. Não instale ESLint ou Prettier globalmente.
 
-Remova os logotipos, o contador e os estilos da demonstração. Use SCSS apenas para estilos globais mínimos e arquivos `*.module.scss` de layout específico. Componentes, variantes, temas, cores, tipografia, espaçamento, bordas, elevação e movimento devem seguir a [orientação de estilos e temas da skill Fluent UI](../codex/skills/fluent-ui-react/references/styling-theming.md).
+Remova os logotipos, o contador e os estilos da demonstração. Use SCSS apenas para estilos globais mínimos e arquivos `*.module.scss` de layout específico. Componentes, variantes, temas, cores, tipografia, espaçamento, bordas, elevação e movimento devem seguir a [orientação de estilos e temas da skill Fluent UI](./codex/skills/fluent-ui-react/references/styling-theming.md).
 
 ## 4. Decidir sobre roteamento
 
@@ -115,7 +115,7 @@ Antes de desenvolver telas:
 - mantenha semântica HTML, nomes acessíveis, teclado, foco visível, contraste, cores forçadas, ampliação e refluxo;
 - não use APIs Fluent `unstable`, `preview`, alfa ou importações profundas sem necessidade aprovada.
 
-O lint ajuda a detectar problemas estáticos, mas não substitui testes com teclado, foco, contraste, ampliação, refluxo e leitor de tela. Consulte a [orientação de acessibilidade da skill Fluent UI](../codex/skills/fluent-ui-react/references/accessibility.md).
+O lint ajuda a detectar problemas estáticos, mas não substitui testes com teclado, foco, contraste, ampliação, refluxo e leitor de tela. Consulte a [orientação de acessibilidade da skill Fluent UI](./codex/skills/fluent-ui-react/references/accessibility.md).
 
 ## 6. Validar
 

@@ -80,7 +80,7 @@ dir
 code .
 ```
 
-A raiz aberta deve conter pelo menos os diretórios `apps`, `services`, `obs-db` e `dev-setup`.
+A raiz aberta deve conter pelo menos os diretórios `apps`, `services`, `docs`, `scripts` e `dev-setup`.
 
 ## 4. Instalar as extensões do VS Code
 
@@ -179,7 +179,7 @@ ls
 git status
 ```
 
-A raiz deve conter `apps`, `services`, `obs-db` e `dev-setup`. Clone o repositório no Ubuntu, e não no sistema de arquivos do Windows, quando o código for executado pelo host remoto.
+A raiz deve conter `apps`, `services`, `docs`, `scripts` e `dev-setup`. Clone o repositório no Ubuntu, e não no sistema de arquivos do Windows, quando o código for executado pelo host remoto.
 
 ## 6. Conectar o VS Code ao Ubuntu por SSH
 
@@ -500,7 +500,7 @@ Depois, encaminhe essa porta pela visualização **Ports** do VS Code. Use a URL
 - [React Router em Framework Mode](https://reactrouter.com/start/framework/installation)
 - [Modos de uso do React Router](https://reactrouter.com/start/modes)
 - [Criação de projeto com Vite](https://vite.dev/guide/)
-- [Skill Fluent UI React do repositório](../codex/skills/fluent-ui-react/SKILL.md)
+- [Skill Fluent UI React do repositório](./codex/skills/fluent-ui-react/SKILL.md)
 - [Instalação local de pacotes com NPM](https://docs.npmjs.com/downloading-and-installing-packages-locally/)
 - [Execução de ferramentas locais com `npm exec`](https://docs.npmjs.com/cli/npm-exec/)
 - [Instalação do Prettier](https://prettier.io/docs/install/)

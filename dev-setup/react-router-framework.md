@@ -120,7 +120,7 @@ Ubuntu Bash:
 mv app/app.css app/app.scss
 ```
 
-SCSS é reservado a estilos globais mínimos e a arquivos `*.module.scss` de layout específico da aplicação. Para componentes, variantes, temas, cores, tipografia, espaçamento, bordas, elevação e movimento, siga a [orientação de estilos e temas da skill Fluent UI](../codex/skills/fluent-ui-react/references/styling-theming.md).
+SCSS é reservado a estilos globais mínimos e a arquivos `*.module.scss` de layout específico da aplicação. Para componentes, variantes, temas, cores, tipografia, espaçamento, bordas, elevação e movimento, siga a [orientação de estilos e temas da skill Fluent UI](./codex/skills/fluent-ui-react/references/styling-theming.md).
 
 ## 4. Configurar análise estática
 
@@ -159,7 +159,7 @@ Antes de desenvolver telas:
 - mantenha semântica HTML, nomes acessíveis, teclado, foco visível, contraste, cores forçadas, ampliação e refluxo;
 - implemente a integração SSR do Griffel com renderizador coerente entre servidor e cliente e estilos presentes no HTML inicial.
 
-SSR não está concluído apenas porque `ssr: true` está configurado. Siga o [guia de SSR e hidratação da skill Fluent UI](../codex/skills/fluent-ui-react/references/ssr-advanced.md) e valide ausência de divergências de hidratação e de conteúdo sem estilo na primeira pintura. Não habilite transformações opcionais do Griffel durante a compilação sem medir a necessidade e confirmar compatibilidade.
+SSR não está concluído apenas porque `ssr: true` está configurado. Siga o [guia de SSR e hidratação da skill Fluent UI](./codex/skills/fluent-ui-react/references/ssr-advanced.md) e valide ausência de divergências de hidratação e de conteúdo sem estilo na primeira pintura. Não habilite transformações opcionais do Griffel durante a compilação sem medir a necessidade e confirmar compatibilidade.
 
 ## 6. Validar
 

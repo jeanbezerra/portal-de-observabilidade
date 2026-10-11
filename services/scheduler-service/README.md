@@ -97,3 +97,12 @@ desabilitados.
 
 Os testes usam JDBC com um banco H2 descartável em modo de compatibilidade com
 PostgreSQL e executam a mesma migration usada pela aplicação.
+
+## Execução e deployment
+
+Este componente possui scripts e manifestos próprios. Consulte o [guia de deployment](deployment/README.md) para executar em containers locais ou publicar em um cluster Kubernetes específico.
+
+```powershell
+.\scripts\deploy\local.ps1 -Engine docker
+.\scripts\deploy\rollout.ps1 -Context meu-cluster -Namespace observabilidade -Image registry.example.com/equipe/scheduler-service:1.0.0
+```

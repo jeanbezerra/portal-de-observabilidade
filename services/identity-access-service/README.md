@@ -1,7 +1,7 @@
 # Identity Access Service
 
 Serviço central de identidade, federação e autorização da plataforma OBS. Esta implementação segue o
-[`obs-identity-access-service-sdd.md`](../../docs/arquitetura-tecnica/sdd/obs-identity-access-service-sdd.md)
+[`obs-identity-access-service-sdd.md`](docs/obs-identity-access-service-sdd.md)
 e mantém o domínio independente de fornecedores: não usa MSAL, SDKs de IdP ou protocolos próprios.
 
 ## Estado da implementação
@@ -200,15 +200,11 @@ Um provider LDAP permanece em `DRAFT` até ser validado e habilitado. Exemplo de
 ```
 
 A referência `secret://identity/ldap/bind-password` é resolvida pela variável
-`OBS_SECRET_IDENTITY_LDAP_BIND_PASSWORD`. No Kubernetes local, crie o Secret opcional consumido pelo
-Deployment:
-
-```shell
-kubectl create secret generic identity-access-secrets \
-  --namespace observabilidade-portal \
-  --from-literal=OBS_SECRET_IDENTITY_LDAP_BIND_PASSWORD='<senha>' \
-  --from-file=OBS_SECRET_IDENTITY_LDAP_TRUST_CERTIFICATE='./ldap-ca.pem'
-```
+`OBS_SECRET_IDENTITY_LDAP_BIND_PASSWORD`. No cluster, inclua essa variável no Secret
+`identity-access-service-runtime`, junto das conexões do banco e do Redis. Para certificados,
+adicione também `OBS_SECRET_IDENTITY_LDAP_TRUST_CERTIFICATE` com o conteúdo PEM. Consulte o
+[guia de deployment](deployment/README.md) para carregar essas variáveis no contexto e namespace
+escolhidos, preservando as chaves existentes do Secret.
 
 O frontend deve obter `/api/v1/auth/csrf` e enviar o token no header retornado ao chamar o login. Credenciais
 de usuário são mantidas somente durante o bind, apagadas dos arrays mutáveis e nunca persistidas ou auditadas.
@@ -240,4 +236,13 @@ Para usar outra instância sem alterar o projeto, sobrescreva somente a URL:
 ```powershell
 .\mvnw.cmd clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar `
   -Dsonar.host.url=https://sonarqube.example.com
+```
+
+## Execução e deployment
+
+Este componente possui scripts e manifestos próprios. Consulte o [guia de deployment](deployment/README.md) para executar em containers locais ou publicar em um cluster Kubernetes específico.
+
+```powershell
+.\scripts\deploy\local.ps1 -Engine docker
+.\scripts\deploy\rollout.ps1 -Context meu-cluster -Namespace observabilidade -Image registry.example.com/equipe/identity-access-service:1.0.0
 ```
