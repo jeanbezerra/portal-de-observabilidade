@@ -92,7 +92,11 @@ class ApiSecurityConfiguration {
 
 	@Bean
 	SessionAuthenticationStrategy sessionAuthenticationStrategy() {
-		return new ChangeSessionIdAuthenticationStrategy();
+		var fixationProtection = new ChangeSessionIdAuthenticationStrategy();
+		return (authentication, request, response) -> {
+			fixationProtection.onAuthentication(authentication, request, response);
+			SessionClientDetails.capture(authentication, request);
+		};
 	}
 
 	@Bean

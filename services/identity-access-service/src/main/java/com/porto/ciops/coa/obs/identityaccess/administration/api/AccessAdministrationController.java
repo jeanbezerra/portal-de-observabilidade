@@ -263,6 +263,30 @@ class AccessAdministrationController {
 		) invalidate(request);
 	}
 
+	@GetMapping("/sessions/overview")
+	@PreAuthorize("hasAuthority('session:read')")
+	ActiveSessionService.SessionOverview sessionOverview(@RequestParam String subject, HttpServletRequest request) {
+		var session = request.getSession(false);
+		return sessions.overview(subject, session == null ? null : session.getId());
+	}
+
+	record RevokeSessionsRequest(
+		@NotBlank @Size(max = 64) String subject,
+		@NotNull @Size(min = 1, max = 100) Set<@NotBlank @Pattern(regexp = "[a-f0-9]{64}") String> references,
+		@NotNull ActiveSessionService.RevocationReason reason
+	) {}
+
+	@PostMapping("/sessions/revoke")
+	@PreAuthorize("hasAuthority('session:revoke')")
+	ActiveSessionService.RevocationResult revokeSelected(@Valid @RequestBody RevokeSessionsRequest body,
+		Principal actor, HttpServletRequest request) {
+		var session = request.getSession(false);
+		var result = sessions.revokeSelected(body.subject(), body.references(),
+			session == null ? null : session.getId(), actor.getName(), body.reason());
+		if (result.currentRevoked()) invalidate(request);
+		return result;
+	}
+
 	private static void requireSameKey(String path, String key) {
 		if (!path.equals(key)) throw new IllegalArgumentException("O identificador não pode ser alterado.");
 	}

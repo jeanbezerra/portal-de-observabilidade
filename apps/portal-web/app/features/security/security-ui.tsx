@@ -34,6 +34,7 @@ import { PageBreadcrumb } from "../../components/page-breadcrumb";
 import { useIdentity } from "./identity-context";
 import { errorMessage } from "./identity-client";
 import { securitySections, type SecuritySection } from "./security-model";
+import { useSecurityActionStyles } from "./security-action-styles";
 
 export const useSecurityStyles = makeStyles({
   page: {
@@ -212,7 +213,7 @@ export function SecurityFrame({
       <div
         className={mergeClasses(
           styles.page,
-          section === "auditoria" && styles.widePage,
+          (section === "auditoria" || section === "sessoes") && styles.widePage,
         )}
       >
         <PageBreadcrumb
@@ -341,6 +342,7 @@ export function EntryDialog({
   children,
   saveLabel = "Salvar",
   destructive = false,
+  busyLabel = "Salvando…",
 }: {
   title: string;
   open: boolean;
@@ -349,8 +351,10 @@ export function EntryDialog({
   children: ReactNode;
   saveLabel?: string;
   destructive?: boolean;
+  busyLabel?: string;
 }) {
   const styles = useSecurityStyles();
+  const actionStyles = useSecurityActionStyles();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const returnFocus = useRef<HTMLElement | null>(
@@ -411,8 +415,13 @@ export function EntryDialog({
               <Button disabled={saving} onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit" appearance="primary" disabled={saving}>
-                {saving ? "Salvando…" : saveLabel}
+              <Button
+                type="submit"
+                appearance="primary"
+                className={destructive ? actionStyles.dangerPrimary : undefined}
+                disabled={saving}
+              >
+                {saving ? busyLabel : saveLabel}
               </Button>
             </DialogActions>
           </DialogBody>

@@ -18,6 +18,8 @@ const routes: [RegExp, string[]][] = [
   [/^api\/v1\/security\/users\/[A-Za-z0-9_-]+\/password$/, ["POST"]],
   [/^api\/v1\/security\/(audit|sessions)$/, ["GET"]],
   [/^api\/v1\/security\/audit\/export$/, ["POST"]],
+  [/^api\/v1\/security\/sessions\/overview$/, ["GET"]],
+  [/^api\/v1\/security\/sessions\/revoke$/, ["POST"]],
   [/^api\/v1\/security\/sessions\/[a-f0-9]{64}$/, ["DELETE"]],
   [
     /^saml2\/(authenticate|service-provider-metadata)\/[A-Za-z0-9_-]+$/,
@@ -113,6 +115,7 @@ export async function proxyIdentity(
     "X-CSRF-TOKEN",
     "X-XSRF-TOKEN",
     "Traceparent",
+    "User-Agent",
   ]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);

@@ -18,6 +18,7 @@ const IdentityContext = createContext<{
   ended: "expirada" | "encerrada" | null;
   refresh: () => Promise<boolean>;
   signOut: () => Promise<void>;
+  endSession: () => void;
 }>({
   identity: null,
   loading: true,
@@ -25,6 +26,7 @@ const IdentityContext = createContext<{
   ended: null,
   refresh: async () => false,
   signOut: async () => {},
+  endSession: () => {},
 });
 
 export function IdentityProvider({ children, initialIdentity }: {
@@ -123,6 +125,10 @@ export function IdentityProvider({ children, initialIdentity }: {
       expire: () => finish("expirada"),
     });
   }, [!!identity, finish, refresh]);
+  const endSession = useCallback(() => {
+    finish("encerrada");
+    channel.current?.postMessage({ type: "signed-out" });
+  }, [finish]);
   const signOut = useCallback(async () => {
     generation.current++;
     pending.current = null;
@@ -131,11 +137,10 @@ export function IdentityProvider({ children, initialIdentity }: {
     } catch (error) {
       if (!(error instanceof IdentityServiceError && error.status === 401)) throw error;
     }
-    finish("encerrada");
-    channel.current?.postMessage({ type: "signed-out" });
-  }, [finish]);
+    endSession();
+  }, [endSession]);
   return (
-    <IdentityContext.Provider value={{ identity, loading, unavailable, ended, refresh, signOut }}>
+    <IdentityContext.Provider value={{ identity, loading, unavailable, ended, refresh, signOut, endSession }}>
       {children}
     </IdentityContext.Provider>
   );

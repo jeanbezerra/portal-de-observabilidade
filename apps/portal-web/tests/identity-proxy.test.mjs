@@ -27,6 +27,7 @@ test("forwards session and CSRF headers without trusting client forwarding or au
         "X-CSRF-TOKEN": "token",
         Origin: "http://portal.test",
         Authorization: "Bearer untrusted",
+        "User-Agent": "QA-browser",
         "X-Forwarded-Host": "attacker.test",
       },
       "{}",
@@ -42,6 +43,7 @@ test("forwards session and CSRF headers without trusting client forwarding or au
   assert.equal(captured.init.headers.get("Cookie"), "OBS_SESSION=old");
   assert.equal(captured.init.headers.get("X-CSRF-TOKEN"), "token");
   assert.equal(captured.init.headers.get("Authorization"), null);
+  assert.equal(captured.init.headers.get("User-Agent"), "QA-browser");
   assert.equal(captured.init.headers.get("X-Forwarded-Host"), "portal.test");
   assert.match(response.headers.get("Set-Cookie"), /HttpOnly/);
   assert.equal(response.headers.get("Cache-Control"), "no-store");

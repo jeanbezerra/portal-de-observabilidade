@@ -2,7 +2,7 @@ import type { Route } from "./+types/security";
 import { UsersPage } from "../features/security/users-page";
 import { CatalogPage } from "../features/security/catalog-page";
 import { ProvidersPage } from "../features/security/providers-page";
-import { SessionsPage } from "../features/security/activity-pages";
+import { SessionsPage } from "../features/security/sessions-page";
 import { AuditPageView } from "../features/security/audit-page";
 import { MyAccountPage } from "../features/security/my-account-page";
 import { SecurityFrame } from "../features/security/security-ui";

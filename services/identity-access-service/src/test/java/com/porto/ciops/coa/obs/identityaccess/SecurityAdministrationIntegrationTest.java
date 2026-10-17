@@ -74,7 +74,8 @@ class SecurityAdministrationIntegrationTest {
 	) throws Exception {
 		var builder = HttpRequest.newBuilder(
 			URI.create("http://127.0.0.1:" + port + "/api/v1" + path)
-		).header("Accept", "application/json");
+		).header("Accept", "application/json")
+			.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36");
 		if (csrf) {
 			JsonNode token = json.readTree(request(client, "GET", "/auth/csrf", null, false).body());
 			builder.header(token.get("headerName").asText(), token.get("token").asText());
@@ -244,6 +245,42 @@ class SecurityAdministrationIntegrationTest {
 		var sessions = ok(request(admin, "GET", "/security/sessions?subject=" + subject, null, false), 200);
 		assertThat(sessions.size()).isEqualTo(1);
 		assertThat(sessions.get(0).get("reference").asText()).matches("[a-f0-9]{64}");
+		assertThat(sessions.get(0).get("browser").asText()).isEqualTo("Chrome");
+		assertThat(sessions.get(0).get("providerId").asText()).isEqualTo("local");
+		var secondReader = client();
+		var thirdReader = client();
+		for (var other : List.of(secondReader, thirdReader)) {
+			ok(request(other, "POST", "/auth/login/local", Map.of("username", "qa-reader", "credential", USER_PASSWORD), true), 200);
+		}
+		var overview = ok(request(admin, "GET", "/security/sessions/overview?subject=" + subject, null, false), 200);
+		assertThat(overview.get("subject").asText()).isEqualTo(subject);
+		assertThat(overview.get("checkedAt").asText()).isNotBlank();
+		assertThat(overview.get("items").size()).isEqualTo(3);
+		var references = new java.util.ArrayList<String>();
+		for (var item : overview.get("items")) {
+			if (!item.get("reference").asText().equals(sessions.get(0).get("reference").asText())) references.add(item.get("reference").asText());
+		}
+		var command = Map.of("subject", subject, "references", references, "reason", "SUSPICIOUS_ACTIVITY");
+		ok(request(reader, "GET", "/security/sessions/overview?subject=" + subject, null, false), 403);
+		ok(request(reader, "POST", "/security/sessions/revoke", command, true), 403);
+		ok(request(admin, "POST", "/security/sessions/revoke", command, false), 403);
+		var bulk = ok(request(admin, "POST", "/security/sessions/revoke", command, true), 200);
+		assertThat(bulk.get("revoked").asInt()).isEqualTo(2);
+		assertThat(bulk.get("currentRevoked").asBoolean()).isFalse();
+		ok(request(secondReader, "GET", "/me", null, false), 401);
+		ok(request(thirdReader, "GET", "/me", null, false), 401);
+		ok(request(reader, "GET", "/me", null, false), 200);
+		assertThat(ok(request(admin, "POST", "/security/sessions/revoke", command, true), 200).get("alreadyEnded").asInt()).isEqualTo(2);
+		assertThat(auditJdbc.sql("select count(*) from public.audit_event where event_type='session.revoked' and source_context like '%SUSPICIOUS_ACTIVITY%'").query(Long.class).single()).isEqualTo(2);
+		var extraAdmin = client();
+		ok(request(extraAdmin, "POST", "/auth/login/local", Map.of("username", "qa-admin", "credential", ADMIN_PASSWORD), true), 200);
+		var selfOverview = ok(request(extraAdmin, "GET", "/security/sessions/overview?subject=" + adminSubject, null, false), 200);
+		String selfReference = null;
+		for (var item : selfOverview.get("items")) if (item.get("current").asBoolean()) selfReference = item.get("reference").asText();
+		assertThat(selfReference).isNotNull();
+		assertThat(ok(request(extraAdmin, "POST", "/security/sessions/revoke", Map.of("subject", adminSubject, "references", List.of(selfReference), "reason", "USER_REQUEST"), true), 200).get("currentRevoked").asBoolean()).isTrue();
+		ok(request(extraAdmin, "GET", "/me", null, false), 401);
+		ok(request(admin, "GET", "/me", null, false), 200);
 		ok(
 			request(
 				admin,

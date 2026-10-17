@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useIdentity } from "./identity-context";
 import { securityRequest } from "./identity-client";
 import type { Group, Permission, Role, User } from "./security-model";
+import { useSecurityActionStyles } from "./security-action-styles";
 import {
   Choices,
   DataState,
@@ -33,6 +34,7 @@ type Entry = {
 const labels = { roles: "perfil", permissions: "permissão", groups: "grupo" };
 export function CatalogPage({ kind }: { kind: Kind }) {
   const styles = useSecurityStyles();
+  const actionStyles = useSecurityActionStyles();
   const { identity, refresh } = useIdentity();
   const canWrite = identity?.authorities.includes("role:write");
   const resource = useSecurityData(async () => {
@@ -185,7 +187,11 @@ export function CatalogPage({ kind }: { kind: Kind }) {
                       <Button size="small" onClick={() => edit(row)}>
                         Editar
                       </Button>
-                      <Button size="small" onClick={() => setDeleting(row)}>
+                      <Button
+                        className={actionStyles.danger}
+                        size="small"
+                        onClick={() => setDeleting(row)}
+                      >
                         Excluir
                       </Button>
                     </div>

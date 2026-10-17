@@ -85,6 +85,12 @@ export type ActiveSession = {
   lastAccessedAt: string;
   expiresAt: string;
   current: boolean;
+  idleExpiresAt: string | null;
+  absoluteExpiresAt: string;
+  browser: string | null;
+  operatingSystem: string | null;
+  device: string | null;
+  providerId: string | null;
 };
 export const securitySections = {
   usuarios: {
@@ -122,7 +128,7 @@ export const securitySections = {
   },
   sessoes: {
     title: "Sessões ativas",
-    description: "Consulte os acessos em uso e encerre sessões de um usuário.",
+    description: "Acompanhe os acessos de cada pessoa, confira os prazos e encerre sessões com segurança.",
     permission: "session:read",
   },
   "minha-conta": {

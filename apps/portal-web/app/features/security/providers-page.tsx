@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useIdentity } from "./identity-context";
 import { identityRequest, securityRequest } from "./identity-client";
 import type { GroupMapping, Provider, Role } from "./security-model";
+import { useSecurityActionStyles } from "./security-action-styles";
 import {
   DataState,
   EntryDialog,
@@ -88,6 +89,7 @@ function draft(): Provider {
 }
 export function ProvidersPage() {
   const styles = useSecurityStyles();
+  const actionStyles = useSecurityActionStyles();
   const { identity } = useIdentity();
   const can = (permission: string) =>
     identity?.authorities.includes(permission);
@@ -204,6 +206,7 @@ export function ProvidersPage() {
                   {provider.status === "ENABLED" &&
                     can("identity-provider:disable") && (
                       <Button
+                        className={actionStyles.danger}
                         size="small"
                         onClick={() => setAction({ provider, verb: "disable" })}
                       >
@@ -429,6 +432,7 @@ export function ProvidersPage() {
 }
 function ExternalMappings({ providers }: { providers: Provider[] }) {
   const styles = useSecurityStyles();
+  const actionStyles = useSecurityActionStyles();
   const { identity, refresh } = useIdentity();
   const canWrite = identity?.authorities.includes("role:write");
   const resource = useSecurityData(async () => {
@@ -488,7 +492,11 @@ function ExternalMappings({ providers }: { providers: Provider[] }) {
               title: "Ações",
               render: (mapping) =>
                 canWrite && (
-                  <Button size="small" onClick={() => setDeleting(mapping)}>
+                  <Button
+                    className={actionStyles.danger}
+                    size="small"
+                    onClick={() => setDeleting(mapping)}
+                  >
                     Remover vínculo
                   </Button>
                 ),
