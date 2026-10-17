@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -77,6 +78,12 @@ class ApiExceptionHandler {
 	ProblemDetail dependencyUnavailable(DataAccessException exception, HttpServletRequest request) {
 		return problem(HttpStatus.SERVICE_UNAVAILABLE, "Identity store unavailable",
 				"The identity service cannot access a required data store", "identity-store-unavailable", request);
+	}
+
+	@ExceptionHandler(DuplicateKeyException.class)
+	ProblemDetail duplicateKey(DuplicateKeyException exception, HttpServletRequest request) {
+		return problem(HttpStatus.CONFLICT, "Registro já cadastrado", "O identificador informado já está em uso.",
+				"duplicate-key", request);
 	}
 
 	@ExceptionHandler(AuthenticationFailedException.class)

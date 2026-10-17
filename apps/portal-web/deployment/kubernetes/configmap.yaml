@@ -7,3 +7,4 @@ data:
   NODE_ENV: production
   HOST: 0.0.0.0
   PORT: '3000'
+  IDENTITY_ACCESS_SERVICE_URL: http://identity-access-service:8083

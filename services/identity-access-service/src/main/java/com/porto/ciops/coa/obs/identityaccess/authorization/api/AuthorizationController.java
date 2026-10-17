@@ -8,6 +8,8 @@ import com.porto.ciops.coa.obs.identityaccess.authorization.domain.Authorization
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.AuthorizationRequest;
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.AuthorizationService;
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.Permission;
+import com.porto.ciops.coa.obs.identityaccess.security.PlatformPrincipal;
+import org.springframework.security.core.Authentication;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,8 +32,15 @@ class AuthorizationController {
 	@PostMapping("/evaluate")
 	@PreAuthorize("isAuthenticated()")
 	AuthorizationDecision evaluate(@Valid @RequestBody EvaluationRequest request, Principal principal) {
-		return authorizationService.authorize(new AuthorizationRequest(principal.getName(), request.providerId(),
-				Permission.parse(request.permission()), request.groups(), request.attributes()));
+		String providerId = request.providerId();
+		Set<String> trustedGroups = Set.of();
+		if (principal instanceof Authentication authentication
+				&& authentication.getPrincipal() instanceof PlatformPrincipal identity) {
+			providerId = identity.providerId();
+			trustedGroups = identity.groups();
+		}
+		return authorizationService.authorize(new AuthorizationRequest(principal.getName(), providerId,
+				Permission.parse(request.permission()), trustedGroups, request.attributes()));
 	}
 
 	record EvaluationRequest(@NotBlank String providerId, @NotBlank String permission,

@@ -37,7 +37,7 @@ if ($Image -notmatch '/.+(:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|@sha256:[a-fA-F0-9]{64})$
 if (($RenderOnly -or $DryRun) -and $BuildAndPush) {
     throw 'RenderOnly e DryRun nao podem ser combinados com BuildAndPush.'
 }
-$manifestFiles = @('configmap.yaml', 'service.yaml', 'deployment.yaml')
+$manifestFiles = @('configmap.yaml', 'service.yaml', 'hpa.yaml', 'deployment.yaml')
 $manifest = ($manifestFiles | ForEach-Object {
     [IO.File]::ReadAllText((Join-Path $componentRoot "deployment/kubernetes/$_")).Trim()
 }) -join "`n---`n"

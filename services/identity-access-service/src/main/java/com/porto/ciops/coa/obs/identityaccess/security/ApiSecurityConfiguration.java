@@ -21,6 +21,7 @@ import org.springframework.security.config.annotation.web.configurers.SessionMan
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
@@ -46,7 +47,7 @@ class ApiSecurityConfiguration {
 			SessionAuthenticationStrategy sessionAuthenticationStrategy,
 			AuditedLogoutHandler auditedLogoutHandler,
 			SamlSecurityConfiguration samlSecurity,
-			JwtAuthenticationConverter jwtAuthenticationConverter) {
+			JwtAuthenticationConverter jwtAuthenticationConverter, AccessEntitlementsFilter entitlementsFilter) {
 		http.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
 				.requestMatchers(HttpMethod.GET, "/api/v1/auth/providers", "/api/v1/auth/csrf",
@@ -61,7 +62,8 @@ class ApiSecurityConfiguration {
 		http.sessionManagement(session -> session.sessionFixation(SessionFixationConfigurer::migrateSession)
 				.sessionAuthenticationStrategy(sessionAuthenticationStrategy));
 		http.logout(logout -> logout.logoutUrl("/api/v1/auth/logout").deleteCookies(
-				properties.session().cookieName()).invalidateHttpSession(true).addLogoutHandler(auditedLogoutHandler));
+				properties.session().cookieName()).invalidateHttpSession(true).addLogoutHandler(auditedLogoutHandler)
+				.logoutSuccessHandler((request, response, _) -> response.setStatus(HttpServletResponse.SC_NO_CONTENT)));
 		http.exceptionHandling(errors -> errors
 				.authenticationEntryPoint((HttpServletRequest request, HttpServletResponse response,
 						AuthenticationException _) -> writeProblem(objectMapper, response,
@@ -73,7 +75,8 @@ class ApiSecurityConfiguration {
 						HttpServletResponse.SC_FORBIDDEN, "Access denied", "access-denied", request.getRequestURI(),
 						traceContext.currentTraceId())));
 		http.addFilterAfter(sessionLifetimeFilter, BasicAuthenticationFilter.class);
-		samlSecurity.configure(http, securityContextRepository);
+		http.addFilterBefore(entitlementsFilter, AuthorizationFilter.class);
+		samlSecurity.configure(http);
 
 		if (properties.token().resourceServerEnabled()) {
 			http.oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(
@@ -96,6 +99,14 @@ class ApiSecurityConfiguration {
 	FilterRegistrationBean<AbsoluteSessionLifetimeFilter> disableContainerFilterRegistration(
 			AbsoluteSessionLifetimeFilter filter) {
 		FilterRegistrationBean<AbsoluteSessionLifetimeFilter> registration = new FilterRegistrationBean<>(filter);
+		registration.setEnabled(false);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<AccessEntitlementsFilter> disableEntitlementsContainerRegistration(
+			AccessEntitlementsFilter filter) {
+		FilterRegistrationBean<AccessEntitlementsFilter> registration = new FilterRegistrationBean<>(filter);
 		registration.setEnabled(false);
 		return registration;
 	}

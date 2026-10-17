@@ -11,11 +11,12 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: '3000'
+      IDENTITY_ACCESS_SERVICE_URL: ${IDENTITY_ACCESS_SERVICE_URL:-http://host.docker.internal:8083}
     restart: unless-stopped
     healthcheck:
       test:
       - CMD-SHELL
-      - wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1
+      - wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
       interval: 10s
       timeout: 5s
       start_period: 60s

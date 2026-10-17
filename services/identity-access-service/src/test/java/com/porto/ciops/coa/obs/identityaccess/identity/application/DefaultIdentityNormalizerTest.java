@@ -12,6 +12,7 @@ import java.util.Set;
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.RolePermissionResolver;
 import com.porto.ciops.coa.obs.identityaccess.federation.domain.FederatedIdentity;
 import com.porto.ciops.coa.obs.identityaccess.identity.domain.PlatformIdentity;
+import com.porto.ciops.coa.obs.identityaccess.identity.domain.IdentityDirectory;
 import com.porto.ciops.coa.obs.identityaccess.provider.domain.IdentityProviderDefinition;
 import com.porto.ciops.coa.obs.identityaccess.provider.domain.IdentityProviderRegistry;
 import com.porto.ciops.coa.obs.identityaccess.provider.domain.ProviderId;
@@ -30,7 +31,7 @@ class DefaultIdentityNormalizerTest {
 		IdentityProviderRegistry registry = registry(provider);
 		RolePermissionResolver resolver = (subject, sourceProvider, groups) ->
 				new RolePermissionResolver.ResolvedEntitlements(Set.of("OPS"), Set.of("job:read"));
-		DefaultIdentityNormalizer normalizer = new DefaultIdentityNormalizer(registry, resolver);
+		DefaultIdentityNormalizer normalizer = new DefaultIdentityNormalizer(registry, resolver, directory());
 
 		PlatformIdentity result = normalizer.normalize(new FederatedIdentity("external-123", providerId,
 				ProviderType.OIDC, Map.of("preferred_username", "maria", "mail", "maria@example.com",
@@ -53,7 +54,7 @@ class DefaultIdentityNormalizerTest {
 						"groups", "groups"), Instant.EPOCH);
 		DefaultIdentityNormalizer normalizer = new DefaultIdentityNormalizer(registry(provider),
 				(subject, sourceProvider, groups) ->
-						new RolePermissionResolver.ResolvedEntitlements(Set.of(), Set.of()));
+						new RolePermissionResolver.ResolvedEntitlements(Set.of(), Set.of()), directory());
 
 		PlatformIdentity arrayGroups = normalizer.normalize(new FederatedIdentity("external-1", providerId,
 				ProviderType.OIDC, Map.of("username", "maria", "groups", new Object[] { "ops", " ", null })));
@@ -75,7 +76,7 @@ class DefaultIdentityNormalizerTest {
 				ProviderType.OIDC, 0, Map.of(), Map.of("subject", "sub", "username", "username"), Instant.EPOCH);
 		RolePermissionResolver resolver = (subject, sourceProvider, groups) ->
 				new RolePermissionResolver.ResolvedEntitlements(Set.of(), Set.of());
-		DefaultIdentityNormalizer normalizer = new DefaultIdentityNormalizer(registry(provider), resolver);
+		DefaultIdentityNormalizer normalizer = new DefaultIdentityNormalizer(registry(provider), resolver, directory());
 		FederatedIdentity missingUsername = new FederatedIdentity("external-1", providerId,
 				ProviderType.OIDC, Map.of("username", " "));
 		DefaultIdentityNormalizer missingProvider = new DefaultIdentityNormalizer(new IdentityProviderRegistry() {
@@ -93,7 +94,7 @@ class DefaultIdentityNormalizerTest {
 			public List<IdentityProviderDefinition> findByType(ProviderType type) {
 				return List.of();
 			}
-		}, resolver);
+		}, resolver, directory());
 
 		assertThatThrownBy(() -> normalizer.normalize(missingUsername))
 				.isInstanceOf(IllegalArgumentException.class);
@@ -117,6 +118,13 @@ class DefaultIdentityNormalizerTest {
 			public List<IdentityProviderDefinition> findByType(ProviderType type) {
 				return provider.type() == type ? List.of(provider) : List.of();
 			}
+		};
+	}
+
+	private static IdentityDirectory directory() {
+		return new IdentityDirectory() {
+			@Override public PlatformIdentity register(PlatformIdentity identity, String externalSubject) { return identity; }
+			@Override public boolean enabled(String subject) { return true; }
 		};
 	}
 }

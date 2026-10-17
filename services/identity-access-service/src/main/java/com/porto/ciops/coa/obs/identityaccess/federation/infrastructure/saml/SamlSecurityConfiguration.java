@@ -9,7 +9,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.saml2.provider.service.authentication.OpenSaml5AuthenticationProvider;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
-import org.springframework.security.web.context.SecurityContextRepository;
 
 @Configuration(proxyBeanMethods = false)
 public class SamlSecurityConfiguration {
@@ -32,14 +31,13 @@ public class SamlSecurityConfiguration {
 		return new SamlResponseAuthenticationConverter(completeAuthentication);
 	}
 
-	public void configure(HttpSecurity http, SecurityContextRepository securityContextRepository) {
+	public void configure(HttpSecurity http) {
 		OpenSaml5AuthenticationProvider authenticationProvider = new OpenSaml5AuthenticationProvider();
 		authenticationProvider.setResponseAuthenticationConverter(responseConverter);
 		ProviderManager authenticationManager = new ProviderManager(authenticationProvider);
 		http.saml2Login(saml -> saml
 				.relyingPartyRegistrationRepository(registrations)
 				.authenticationManager(authenticationManager)
-				.securityContextRepository(securityContextRepository)
 				.successHandler(new SimpleUrlAuthenticationSuccessHandler("/"))
 				.failureHandler(failureHandler)
 				.permitAll());

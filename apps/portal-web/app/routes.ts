@@ -1,6 +1,12 @@
-import { type RouteConfig, index, route } from "@react-router/dev/routes";
+import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
+  route("api/identity/*", "routes/identity-proxy.ts"),
+  route("health", "routes/health.ts"),
+  route("entrar", "routes/login.tsx"),
+  layout("routes/portal.tsx", [
+  route("seguranca", "routes/security-overview.tsx"),
+  route("seguranca/:secao", "routes/security.tsx"),
   index("routes/home.tsx"),
   route("orcamentos", "routes/budgets.tsx"),
   route("orcamentos/novo/dynatrace", "routes/new-dynatrace-quote.tsx"),
@@ -29,4 +35,5 @@ export default [
     "routes/administration-scheduling.tsx",
   ),
   route("administracao/:secao", "routes/administration.tsx"),
+  ]),
 ] satisfies RouteConfig;

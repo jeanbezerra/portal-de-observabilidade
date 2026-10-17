@@ -17,7 +17,6 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
-import { PortalShell } from "./components/portal-shell";
 import "./app.css";
 
 const portoTheme = {
@@ -75,9 +74,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <PortalShell>
-      <Outlet />
-    </PortalShell>
+    <Outlet />
   );
 }
 
@@ -124,11 +121,17 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "Página não encontrada" : "Erro na página";
+    message = error.status === 404
+      ? "Página não encontrada"
+      : error.status === 503
+        ? "Serviço de segurança indisponível"
+        : "Erro na página";
     details =
       error.status === 404
         ? "O endereço informado não existe no portal."
-        : error.statusText || details;
+        : error.status === 503
+          ? "Não foi possível validar sua sessão. Tente novamente em instantes."
+          : error.statusText || details;
   } else if (import.meta.env.DEV && error instanceof Error) {
     details = error.message;
     stack = error.stack;
@@ -149,6 +152,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           </pre>
         ) : null}
         <div>
+          {isRouteErrorResponse(error) && error.status === 503 && (
+            <Button onClick={() => window.location.reload()}>Tentar novamente</Button>
+          )}
           <Button as="a" href="/" appearance="primary">
             Voltar ao início
           </Button>

@@ -93,6 +93,8 @@ O comando constrói a imagem, publica no registro, aplica somente os YAMLs deste
 .\scripts\deploy\rollout.ps1 -Context $clusterContext -Namespace $namespace -Image $image
 ```
 
+O Deployment mantém uma réplica e usa `Recreate`, encerrando o pod anterior antes de iniciar o novo. O rollout inclui `kubernetes/hpa.yaml`, com `minReplicas: 1` e `maxReplicas: 1`, inclusive quando já existe um HPA no cluster. Há uma breve indisponibilidade durante a substituição do pod.
+
 Para registro privado, configure o Secret de pull no namespace e passe `-ImagePullSecret nome-do-secret`. Use tags diferentes a cada release ou um digest `@sha256:...`.
 
 ### Conferir os YAMLs

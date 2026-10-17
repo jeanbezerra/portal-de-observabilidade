@@ -1,9 +1,7 @@
 import {
-  Avatar,
   Button,
   makeStyles,
   mergeClasses,
-  Text,
   Tooltip,
   tokens,
 } from "@fluentui/react-components";
@@ -45,6 +43,7 @@ import {
   loadNavigationPreferences,
   saveNavigationPreferences,
 } from "./navigation-preferences";
+import { AccountControls } from "../features/security/account-controls";
 
 const useStyles = makeStyles({
   app: {
@@ -418,42 +417,70 @@ const navigationGroups: NavigationGroup[] = [
     sections: [
       {
         id: "identidade-acesso",
-        label: "Identidade e acesso",
+        label: "Segurança",
         items: [
           {
-            to: "/administracao/usuarios",
+            to: "/seguranca",
+            label: "Visão de segurança",
+            end: true,
+            regularIcon: KeyRegular,
+            filledIcon: KeyFilled,
+          },
+          {
+            to: "/seguranca/usuarios",
             label: "Usuários",
             end: true,
             regularIcon: PersonRegular,
             filledIcon: PersonFilled,
           },
           {
-            to: "/administracao/grupos",
+            to: "/seguranca/grupos",
             label: "Grupos",
             end: true,
             regularIcon: GroupRegular,
             filledIcon: GroupFilled,
           },
           {
-            to: "/administracao/roles",
-            label: "Roles",
+            to: "/seguranca/roles",
+            label: "Perfis de acesso",
             end: true,
             regularIcon: PersonKeyRegular,
             filledIcon: PersonKeyFilled,
           },
           {
-            to: "/administracao/permissoes",
+            to: "/seguranca/permissoes",
             label: "Permissões",
             end: true,
             regularIcon: KeyRegular,
             filledIcon: KeyFilled,
           },
           {
-            to: "/administracao/provedores-idp",
-            label: "Provedores IDP",
+            to: "/seguranca/provedores-idp",
+            label: "Provedores externos",
             end: true,
             regularIcon: BuildingPeopleRegular,
             filledIcon: BuildingPeopleFilled,
+          },
+          {
+            to: "/seguranca/auditoria",
+            label: "Auditoria de segurança",
+            end: true,
+            regularIcon: HistoryRegular,
+            filledIcon: HistoryFilled,
+          },
+          {
+            to: "/seguranca/sessoes",
+            label: "Sessões ativas",
+            end: true,
+            regularIcon: PersonKeyRegular,
+            filledIcon: PersonKeyFilled,
+          },
+          {
+            to: "/seguranca/minha-conta",
+            label: "Minha conta",
+            end: true,
+            regularIcon: PersonRegular,
+            filledIcon: PersonFilled,
           },
         ],
       },
@@ -652,11 +679,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           <span className={styles.portalName}>Portal de Observabilidade</span>
         </div>
         <div className={styles.headerActions}>
-          <div className={styles.userName}>
-            <Text weight="semibold">Usuário Porto</Text>
-            <Text size={200}>Solicitante</Text>
-          </div>
-          <Avatar name="Usuário Porto" color="brand" />
+          <AccountControls />
         </div>
       </header>
 

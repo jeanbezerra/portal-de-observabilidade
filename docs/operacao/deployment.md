@@ -65,6 +65,8 @@ Use `-BuildAndPush -Engine docker` para construir e publicar antes de aplicar os
 
 Os Services são internos. Use `kubectl --context ... --namespace ... port-forward` para acesso temporário ou adapte o exemplo de Ingress ao domínio, controller e TLS da equipe. No portal, `-SchedulerServiceUrl` informa a URL pública da API durante o build da imagem. O navegador não acessa DNS interno do Kubernetes.
 
+Os cinco componentes mantêm uma réplica fixa. Seus Deployments usam `Recreate` para encerrar o pod anterior antes de iniciar o novo, sem réplica extra durante o rollout; isso causa uma breve indisponibilidade na atualização. O HPA do Identity Access também é aplicado pelo script do componente, com mínimo e máximo de 1. Nos demais componentes não há autoscaling horizontal configurado.
+
 ## Separação futura dos repositórios
 
 Copie a pasta completa de cada componente, incluindo arquivos ocultos, `deployment/`, `scripts/` e documentação. Os scripts calculam apenas a raiz do próprio projeto; não referenciam `apps/`, `services/`, bibliotecas externas ou manifestos de projetos vizinhos.

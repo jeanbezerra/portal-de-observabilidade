@@ -37,6 +37,7 @@ public class ProviderAdministrationService {
 	@CacheEvict(cacheNames = PROVIDER_DISCOVERY_CACHE, allEntries = true)
 	public IdentityProviderDefinition create(ProviderUpsertCommand command, String actor) {
 		ProviderId id = new ProviderId(command.id());
+		if ("local".equals(id.value())) throw new IllegalArgumentException("The local identity provider is built in");
 		if (providers.existsById(id)) {
 			throw new ProviderAlreadyExistsException(id);
 		}
@@ -60,7 +61,8 @@ public class ProviderAdministrationService {
 			throw new IllegalArgumentException("The provider type cannot be changed");
 		}
 		IdentityProviderDefinition updated = current.revise(command.displayName(), command.priority(),
-				command.configuration(), command.attributeMappings(), clock.instant());
+				restoreRedactedReferences(command.configuration(), current.configuration()),
+				command.attributeMappings(), clock.instant());
 		validator.validateSecretSafety(updated);
 		IdentityProviderDefinition saved = providers.save(updated);
 		publish("identity-provider.updated", actor, id);
@@ -101,6 +103,18 @@ public class ProviderAdministrationService {
 
 	private IdentityProviderDefinition requireProvider(ProviderId id) {
 		return providers.findById(id).orElseThrow(() -> new ProviderNotFoundException(id));
+	}
+
+	private static java.util.Map<String, String> restoreRedactedReferences(
+			java.util.Map<String, String> submitted, java.util.Map<String, String> current) {
+		java.util.Map<String, String> restored = new java.util.LinkedHashMap<>(submitted);
+		restored.replaceAll((key, value) -> {
+			if (!"[REDACTED]".equals(value)) return value;
+			String existing = current.get(key);
+			if (existing == null) throw new IllegalArgumentException("A new secret reference must be supplied");
+			return existing;
+		});
+		return java.util.Map.copyOf(restored);
 	}
 
 	private void publish(String eventType, String actor, ProviderId id) {

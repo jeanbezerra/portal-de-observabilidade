@@ -15,6 +15,9 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.porto.ciops.coa.obs.identityaccess.configuration.IdentityAccessProperties;
+import com.porto.ciops.coa.obs.identityaccess.federation.application.CompleteRedirectAuthenticationUseCase;
+import com.porto.ciops.coa.obs.identityaccess.federation.infrastructure.saml.SamlAuthenticationFailureHandler;
+import com.porto.ciops.coa.obs.identityaccess.federation.infrastructure.saml.SamlResponseAuthenticationConverter;
 import com.porto.ciops.coa.obs.identityaccess.federation.infrastructure.saml.SamlSecurityConfiguration;
 import com.porto.ciops.coa.obs.identityaccess.identity.domain.PlatformIdentity;
 import org.junit.jupiter.api.Test;
@@ -28,6 +31,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
+import org.springframework.security.saml2.provider.service.web.authentication.Saml2WebSsoAuthenticationFilter;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.context.support.GenericApplicationContext;
@@ -39,10 +44,10 @@ class SecurityComponentsTest {
 	@Test
 	void returnsTheNormalizedPlatformIdentity() {
 		PlatformIdentity identity = identity();
-		CurrentIdentityController controller = new CurrentIdentityController();
+		CurrentIdentityController controller = new CurrentIdentityController(properties(), FIXED_CLOCK);
 
 		CurrentIdentityController.CurrentIdentityResponse response = controller.current(
-				PlatformAuthenticationFactory.authenticated(identity));
+				PlatformAuthenticationFactory.authenticated(identity), new MockHttpServletRequest());
 
 		assertThat(response.subject()).isEqualTo("subject-1");
 		assertThat(response.roles()).containsExactly("OBS_OPERATOR");
@@ -60,7 +65,7 @@ class SecurityComponentsTest {
 				new SimpleGrantedAuthority("profile:read"));
 
 		CurrentIdentityController.CurrentIdentityResponse response =
-				new CurrentIdentityController().current(authentication);
+				new CurrentIdentityController(properties(), FIXED_CLOCK).current(authentication, new MockHttpServletRequest());
 
 		assertThat(response.subject()).isEqualTo("subject-2");
 		assertThat(response.attributes()).containsEntry("department", "operations").doesNotContainKey("access_token");
@@ -71,10 +76,45 @@ class SecurityComponentsTest {
 		TestingAuthenticationToken authentication = new TestingAuthenticationToken("service-account", null);
 
 		CurrentIdentityController.CurrentIdentityResponse response =
-				new CurrentIdentityController().current(authentication);
+				new CurrentIdentityController(properties(), FIXED_CLOCK).current(authentication, new MockHttpServletRequest());
 
 		assertThat(response.subject()).isEqualTo("service-account");
 		assertThat(response.attributes()).isEmpty();
+	}
+
+	@Test
+	void exposesSessionExpiryWithoutExposingTheSessionCredential() {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		MockHttpSession session = new MockHttpSession(null, "private-session-credential");
+		request.setSession(session);
+		session.setMaxInactiveInterval(1800);
+		Instant createdAt = Instant.ofEpochMilli(session.getCreationTime());
+		Instant now = createdAt.plus(Duration.ofMinutes(10));
+		var controller = new CurrentIdentityController(properties(), Clock.fixed(now, ZoneOffset.UTC));
+
+		var response = controller.current(PlatformAuthenticationFactory.authenticated(identity()), request);
+
+		assertThat(response.session().checkedAt()).isEqualTo(now);
+		assertThat(response.session().expiresAt()).isEqualTo(now.plusSeconds(1800));
+		assertThat(response.session().absoluteExpiresAt()).isEqualTo(createdAt.plus(Duration.ofHours(8)));
+		assertThat(response.session().toString()).doesNotContain(session.getId());
+	}
+
+	@Test
+	void limitsSessionRenewalToTheAbsoluteLifetimeAndDoesNotCreateTokenSessions() {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		MockHttpSession session = (MockHttpSession) request.getSession();
+		session.setMaxInactiveInterval(1800);
+		Instant createdAt = Instant.ofEpochMilli(session.getCreationTime());
+		Instant now = createdAt.plus(Duration.ofHours(8)).minusSeconds(60);
+		var controller = new CurrentIdentityController(properties(), Clock.fixed(now, ZoneOffset.UTC));
+		var authentication = PlatformAuthenticationFactory.authenticated(identity());
+
+		assertThat(controller.current(authentication, request).session().expiresAt())
+				.isEqualTo(createdAt.plus(Duration.ofHours(8)));
+		MockHttpServletRequest withoutSession = new MockHttpServletRequest();
+		assertThat(controller.current(authentication, withoutSession).session()).isNull();
+		assertThat(withoutSession.getSession(false)).isNull();
 	}
 
 	@Test
@@ -176,7 +216,7 @@ class SecurityComponentsTest {
 	}
 
 	@Test
-	void buildsTheSessionBasedSecurityFilterChain() throws Exception {
+	void buildsTheSessionBasedSecurityFilterChainWithSaml() throws Exception {
 		ObjectPostProcessor<Object> postProcessor = new ObjectPostProcessor<>() {
 			@Override
 			public <T> T postProcess(T object) {
@@ -203,11 +243,17 @@ class SecurityComponentsTest {
 					FIXED_CLOCK, JsonMapper.builder().build(), () -> "trace-123");
 			AuditedLogoutHandler logoutHandler = new AuditedLogoutHandler(event -> { }, () -> "trace-123",
 					FIXED_CLOCK);
+			SamlSecurityConfiguration samlSecurity = new SamlSecurityConfiguration(
+					mock(RelyingPartyRegistrationRepository.class),
+					new SamlResponseAuthenticationConverter(mock(CompleteRedirectAuthenticationUseCase.class)),
+					mock(SamlAuthenticationFailureHandler.class));
 
-			assertThat(configuration.apiSecurityFilterChain(http, properties, lifetimeFilter,
+			var filterChain = configuration.apiSecurityFilterChain(http, properties, lifetimeFilter,
 					JsonMapper.builder().build(), () -> "trace-123", contextRepository, sessionStrategy,
-					logoutHandler, mock(SamlSecurityConfiguration.class),
-					new JwtDecoderConfiguration().jwtAuthenticationConverter())).isNotNull();
+					logoutHandler, samlSecurity, new JwtDecoderConfiguration().jwtAuthenticationConverter(),
+					mock(AccessEntitlementsFilter.class));
+
+			assertThat(filterChain.getFilters()).anyMatch(Saml2WebSsoAuthenticationFilter.class::isInstance);
 		}
 	}
 

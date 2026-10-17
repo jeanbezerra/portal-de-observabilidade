@@ -24,18 +24,18 @@ class JdbcRolePermissionResolverTest {
 		when(jdbcClient.sql(ArgumentMatchers.anyString())).thenReturn(statement);
 		when(statement.param(ArgumentMatchers.anyString(), ArgumentMatchers.any())).thenReturn(statement);
 		when(statement.query(String.class)).thenReturn(query);
-		when(query.list()).thenReturn(List.of("OBS_USER"), List.of("OBS_OPERATOR"), List.of("job:read"));
+		when(query.list()).thenReturn(List.of("OBS_USER"), List.of("OBS_LOCAL"), List.of("OBS_OPERATOR"), List.of("job:read"));
 
 		var result = new JdbcRolePermissionResolver(jdbcClient).resolve(
 				"subject-1", "corporate-ldap", Set.of("operations"));
 
-		assertThat(result.roles()).containsExactlyInAnyOrder("OBS_USER", "OBS_OPERATOR");
+		assertThat(result.roles()).containsExactlyInAnyOrder("OBS_USER", "OBS_LOCAL", "OBS_OPERATOR");
 		assertThat(result.permissions()).containsExactly("job:read");
-		verify(jdbcClient, times(3)).sql(ArgumentMatchers.anyString());
+		verify(jdbcClient, times(4)).sql(ArgumentMatchers.anyString());
 	}
 
 	@Test
-	void skipsGroupAndPermissionQueriesWhenThereAreNoInputs() {
+	void checksLocalGroupsAndSkipsExternalGroupAndPermissionQueriesWhenThereAreNoInputs() {
 		JdbcClient jdbcClient = mock(JdbcClient.class);
 		JdbcClient.StatementSpec statement = mock(JdbcClient.StatementSpec.class);
 		JdbcClient.MappedQuerySpec<String> query = mock(JdbcClient.MappedQuerySpec.class);
@@ -48,6 +48,6 @@ class JdbcRolePermissionResolverTest {
 
 		assertThat(result.roles()).isEmpty();
 		assertThat(result.permissions()).isEmpty();
-		verify(jdbcClient).sql(ArgumentMatchers.anyString());
+		verify(jdbcClient, times(2)).sql(ArgumentMatchers.anyString());
 	}
 }

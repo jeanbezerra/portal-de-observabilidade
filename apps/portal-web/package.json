@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:production": "node --test tests/production-assets.integration.mjs",
+    "verify:assets": "node scripts/verify-assets.mjs",
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",

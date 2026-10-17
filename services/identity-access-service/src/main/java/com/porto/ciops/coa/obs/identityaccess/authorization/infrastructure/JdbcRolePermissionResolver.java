@@ -26,6 +26,14 @@ class JdbcRolePermissionResolver implements RolePermissionResolver {
 				join iam_role r on r.id = pr.role_id
 				where pr.principal_subject = :subject and r.enabled = true
 				""").param("subject", subject).query(String.class).list());
+		roles.addAll(jdbcClient.sql("""
+				select distinct r.role_key from iam_group_member m
+				join platform_identity i on i.id=m.identity_id
+				join iam_group g on g.id=m.group_id
+				join iam_group_role gr on gr.group_id=g.id
+				join iam_role r on r.id=gr.role_id
+				where i.subject=:subject and g.enabled=true and r.enabled=true
+				""").param("subject", subject).query(String.class).list());
 
 		if (!externalGroups.isEmpty()) {
 			roles.addAll(jdbcClient.sql("""

@@ -6,4 +6,5 @@ README.md
 .env
 .env.*
 deployment
-scripts
+/scripts/*
+!/scripts/verify-assets.mjs

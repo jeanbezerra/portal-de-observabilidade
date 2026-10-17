@@ -22,6 +22,8 @@ services:
       SESSION_COOKIE_SECURE: 'false'
       SECURITY_PRODUCTION_MODE: 'false'
       TOKEN_ISSUER: http://localhost:${APP_PORT:-8083}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     restart: unless-stopped
     depends_on:
       postgres:

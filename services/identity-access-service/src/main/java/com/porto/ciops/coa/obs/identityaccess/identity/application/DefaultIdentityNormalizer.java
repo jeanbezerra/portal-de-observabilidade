@@ -14,6 +14,7 @@ import java.util.UUID;
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.RolePermissionResolver;
 import com.porto.ciops.coa.obs.identityaccess.federation.domain.FederatedIdentity;
 import com.porto.ciops.coa.obs.identityaccess.identity.domain.IdentityNormalizer;
+import com.porto.ciops.coa.obs.identityaccess.identity.domain.IdentityDirectory;
 import com.porto.ciops.coa.obs.identityaccess.identity.domain.PlatformIdentity;
 import com.porto.ciops.coa.obs.identityaccess.provider.application.ProviderNotFoundException;
 import com.porto.ciops.coa.obs.identityaccess.provider.domain.IdentityProviderDefinition;
@@ -28,10 +29,13 @@ public class DefaultIdentityNormalizer implements IdentityNormalizer {
 			"assertion", "private-key");
 	private final IdentityProviderRegistry providerRegistry;
 	private final RolePermissionResolver entitlements;
+	private final IdentityDirectory directory;
 
-	public DefaultIdentityNormalizer(IdentityProviderRegistry providerRegistry, RolePermissionResolver entitlements) {
+	public DefaultIdentityNormalizer(IdentityProviderRegistry providerRegistry, RolePermissionResolver entitlements,
+			IdentityDirectory directory) {
 		this.providerRegistry = providerRegistry;
 		this.entitlements = entitlements;
+		this.directory = directory;
 	}
 
 	@Override
@@ -47,9 +51,9 @@ public class DefaultIdentityNormalizer implements IdentityNormalizer {
 		RolePermissionResolver.ResolvedEntitlements resolved = entitlements.resolve(subject,
 				provider.id().value(), groups);
 
-		return new PlatformIdentity(subject, username, email,
+		return directory.register(new PlatformIdentity(subject, username, email,
 				displayName == null ? username : displayName, provider.id().value(), groups,
-				resolved.roles(), resolved.permissions(), safeAttributes(identity.attributes()));
+				resolved.roles(), resolved.permissions(), safeAttributes(identity.attributes())), identity.externalSubject());
 	}
 
 	private static String stableSubject(FederatedIdentity identity) {

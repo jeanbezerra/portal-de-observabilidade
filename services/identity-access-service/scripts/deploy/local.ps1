@@ -25,8 +25,14 @@ if (-not (Get-Command $Engine -ErrorAction SilentlyContinue)) {
 if (-not (Test-Path -LiteralPath $envFile)) {
     $example = [IO.File]::ReadAllText((Join-Path $componentRoot 'deployment/local/.env.example'))
     $example = $example.Replace('__GENERATE_PASSWORD__', [guid]::NewGuid().ToString('N'))
+    $example = $example.Replace('__GENERATE_ADMIN_PASSWORD__', [guid]::NewGuid().ToString('N'))
     [IO.File]::WriteAllText($envFile, $example, (New-Object Text.UTF8Encoding($false)))
     Write-Host 'Configuracao local criada em deployment/local/.env.'
+}
+if ($Action -eq 'up' -and [IO.File]::ReadAllText($envFile) -notmatch '(?m)^BOOTSTRAP_ADMIN_PASSWORD=') {
+    $bootstrap = "`nBOOTSTRAP_ADMIN_USERNAME=admin`nBOOTSTRAP_ADMIN_PASSWORD=$([guid]::NewGuid().ToString('N'))`n"
+    [IO.File]::AppendAllText($envFile, $bootstrap, (New-Object Text.UTF8Encoding($false)))
+    Write-Host 'Primeiro acesso local configurado em deployment/local/.env; a senha nao sera exibida no log.'
 }
 $composeArguments = @('compose', '--project-name', 'identity-access-service', '--env-file', $envFile, '--file', $composeFile)
 $previousSkipTests = [Environment]::GetEnvironmentVariable('SKIP_TESTS', 'Process')

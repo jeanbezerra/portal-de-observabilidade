@@ -8,6 +8,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.AuthorizationDecision;
 import com.porto.ciops.coa.obs.identityaccess.authorization.domain.AuthorizationRequest;
+import com.porto.ciops.coa.obs.identityaccess.identity.domain.PlatformIdentity;
+import com.porto.ciops.coa.obs.identityaccess.security.PlatformAuthenticationFactory;
 import org.junit.jupiter.api.Test;
 
 class AuthorizationControllerTest {
@@ -22,14 +24,18 @@ class AuthorizationControllerTest {
 			return expected;
 		});
 		AuthorizationController.EvaluationRequest request = new AuthorizationController.EvaluationRequest(
-				"corporate-oidc", "job:read", Set.of("operations"), Map.of("region", "south"));
+				"untrusted-provider", "job:read", Set.of("untrusted-admin-group"), Map.of("region", "south"));
 
-		AuthorizationDecision result = controller.evaluate(request, () -> "subject-1");
+		var authentication = PlatformAuthenticationFactory.authenticated(new PlatformIdentity(
+				"subject-1", "maria", null, "Maria", "corporate-oidc", Set.of("operations"),
+				Set.of(), Set.of(), Map.of()));
+		AuthorizationDecision result = controller.evaluate(request, authentication);
 
 		assertThat(result).isSameAs(expected);
 		assertThat(captured.get().subject()).isEqualTo("subject-1");
 		assertThat(captured.get().permission().value()).isEqualTo("job:read");
 		assertThat(captured.get().groups()).containsExactly("operations");
+		assertThat(captured.get().providerId()).isEqualTo("corporate-oidc");
 	}
 
 	@Test

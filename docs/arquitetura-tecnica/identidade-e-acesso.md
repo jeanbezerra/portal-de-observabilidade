@@ -96,8 +96,8 @@ flowchart LR
 
     subgraph K8S["Kubernetes — Portal de Observabilidade"]
         WEB["portal-web<br/>React Router SSR + BFF<br/>frontend específico"]:::app
-        HPA["HorizontalPodAutoscaler<br/>min 1 · max 3"]:::edge
-        SECURITY["identity-access-service<br/>Identity Broker + STS + Sessões + PDP<br/>Deployment stateless · HPA 1–3"]:::security
+        HPA["HorizontalPodAutoscaler<br/>min 1 · max 1"]:::edge
+        SECURITY["identity-access-service<br/>Identity Broker + STS + Sessões + PDP<br/>Deployment stateless · 1 réplica"]:::security
         REDIS[("identity-redis<br/>sessões, transações OIDC e revogação<br/>stateful/gerenciado")]:::data
         IAMDB[("identity-access-db · PostgreSQL<br/>roles, políticas e auditoria durável")]:::data
         KEYS["KMS / Secret Manager<br/>chaves de assinatura e credenciais"]:::security
@@ -209,8 +209,8 @@ sequenceDiagram
 ### `identity-access-service`
 
 O serviço é um `Deployment` stateless. Nenhuma sessão fica na memória de um
-pod; por isso qualquer réplica pode atender qualquer requisição. O HPA alvo tem
-mínimo de 1 e máximo de 3 réplicas:
+pod; por isso qualquer réplica pode atender qualquer requisição. A configuração
+atual mantém uma réplica fixa, com mínimo e máximo de 1 no HPA:
 
 ```yaml
 apiVersion: autoscaling/v2
@@ -223,7 +223,7 @@ spec:
     kind: Deployment
     name: identity-access-service
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 1
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -246,10 +246,10 @@ O workload precisa declarar `resources.requests` para CPU e memória e o cluster
 precisa fornecer métricas ao HPA. Além de CPU e memória, uma evolução pode usar
 latência p95, requisições concorrentes ou tamanho de fila como métricas externas.
 
-`minReplicas: 1` atende ao requisito de custo mínimo, mas não oferece alta
-disponibilidade imediata durante falha, manutenção ou subida de carga. Para
-produção com requisito de disponibilidade, a recomendação é mudar o mínimo
-para 2, manter `PodDisruptionBudget`, anti-affinity e distribuição por zona.
+Os cinco componentes do portal usam `replicas: 1` e estratégia `Recreate`.
+O pod anterior é encerrado antes de iniciar o novo, respeitando o limite de uma
+réplica durante o rollout. Essa configuração não oferece alta disponibilidade
+e causa uma breve indisponibilidade durante atualizações ou falhas do pod.
 
 ### Redis
 

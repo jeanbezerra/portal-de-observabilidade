@@ -9,6 +9,8 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: portal-web
@@ -31,18 +33,18 @@ spec:
           containerPort: 3000
         startupProbe:
           httpGet:
-            path: /
+            path: /health
             port: http
           periodSeconds: 2
           failureThreshold: 30
         readinessProbe:
           httpGet:
-            path: /
+            path: /health
             port: http
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /
+            path: /health
             port: http
           periodSeconds: 10
           failureThreshold: 6

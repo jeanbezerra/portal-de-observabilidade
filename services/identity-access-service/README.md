@@ -1,6 +1,14 @@
 # Identity Access Service
 
-Serviço central de identidade, federação e autorização da plataforma OBS. Esta implementação segue o
+Serviço central de identidade, autenticação local, federação e autorização da plataforma OBS.
+Usuários, senhas protegidas por BCrypt, grupos, perfis, permissões e auditoria são gerenciados no PostgreSQL
+por padrão. SAML e LDAP são opcionais, utilizadas somente quando cadastradas e habilitadas.
+Redis mantém as sessões transitórias; nenhum provedor externo é necessário para o acesso local.
+`GET /api/v1/me` também informa `session.checkedAt`, `session.expiresAt` e
+`session.absoluteExpiresAt` para que o portal acompanhe a validade da sessão sem
+receber seu identificador. A expiração considera o menor prazo entre inatividade
+e duração máxima. Clientes autenticados somente por token recebem `session: null`.
+Esta implementação segue o
 [`obs-identity-access-service-sdd.md`](docs/obs-identity-access-service-sdd.md)
 e mantém o domínio independente de fornecedores: não usa MSAL, SDKs de IdP ou protocolos próprios.
 
@@ -58,6 +66,54 @@ Security. Controllers apenas validam/mapeiam entrada e saída. PostgreSQL armaze
 RBAC e auditoria; Redis armazena apenas sessão e cache reconstruível.
 
 ## API disponível
+
+### Gestão local e portal
+
+O portal oferece `/entrar` e `/seguranca`, com usuários, grupos locais, perfis, permissões,
+provedores externos, vínculos de grupos, auditoria, sessões ativas e minha conta.
+As chamadas passam pela rota interna `/api/identity/*`, que encaminha cookies HttpOnly e CSRF
+ao endereço definido em `IDENTITY_ACCESS_SERVICE_URL` no servidor do portal.
+
+| Método | Endpoint | Permissão |
+|---|---|---|
+| POST | `/api/v1/auth/login/local` | público + CSRF |
+| POST | `/api/v1/me/password` | sessão + senha atual + CSRF |
+| GET / POST | `/api/v1/security/users` | `identity:read` / `identity:write` + `role:write` |
+| PUT | `/api/v1/security/users/{subject}` | `identity:write` + `role:write` |
+| POST | `/api/v1/security/users/{subject}/password` | `identity:write` + `role:write` |
+| GET / POST / PUT / DELETE | `/api/v1/security/roles[/{key}]` | `role:read` / `role:write` |
+| GET / POST / DELETE | `/api/v1/security/permissions[/{key}]` | `role:read` / `role:write` |
+| GET / POST / PUT / DELETE | `/api/v1/security/groups[/{key}]` | `role:read` / `role:write` |
+| GET / POST / DELETE | `/api/v1/security/group-mappings[/{id}]` | `role:read` / `role:write` |
+| GET | `/api/v1/security/audit?query=&outcome=&since=&limit=50&offset=0` | `audit:read` |
+| POST | `/api/v1/security/audit/export` | `audit:read` + `audit:export` + CSRF; incluir nomes exige `identity:read` |
+| GET | `/api/v1/security/sessions?subject=...` | `session:read` |
+| DELETE | `/api/v1/security/sessions/{reference}?subject=...` | `session:revoke` |
+
+Mutações exigem CSRF. Auditoria usa paginação e últimos 30 dias por padrão. Referências de sessão
+são hashes; IDs que autenticam o navegador não são retornados. O perfil `OBS_ADMIN` e suas permissões
+são protegidos. Deve permanecer um administrador local ativo. Perfis e grupos são reavaliados em cada
+requisição; bloqueios e redefinições de senha encerram sessões. Cinco falhas consecutivas de login
+bloqueiam temporariamente a conta por 15 minutos.
+
+A auditoria aceita filtros combinados por intervalo, resultado, evento, usuário,
+recurso, provedor, trace ID e UUID, com ordenação no servidor e instante de corte.
+Exportações CSV/XLSX/JSON/PDF usam a consulta completa, registram finalidade e
+recibo e omitem nomes atuais por padrão. Os limites e as decisões de governança
+estão descritos em [Auditoria e LGPD](../../docs/operacao/auditoria-e-lgpd.md).
+
+### Primeiro administrador
+
+Em um banco vazio, forneça `BOOTSTRAP_ADMIN_USERNAME` e `BOOTSTRAP_ADMIN_PASSWORD` no ambiente ou Secret.
+A senha exige ao menos 12 caracteres e no máximo 72 bytes. O primeiro início cria a conta com
+`OBS_ADMIN`; inícios posteriores não sobrescrevem usuários ou senhas. Remova essas variáveis após a criação
+e altere a senha em **Segurança > Minha conta**. Não existe senha compartilhada predefinida.
+O script Compose gera uma senha única em `deployment/local/.env`. No Kubernetes, use um Secret;
+`runtime-secret.env.example` documenta as variáveis opcionais. O identificador `local` é reservado.
+Contas externas são registradas após o primeiro login federado: senha, nome e e-mail vêm do provedor,
+enquanto bloqueios e permissões da plataforma permanecem locais.
+
+### Provedores externos
 
 | Método | Endpoint | Proteção |
 |---|---|---|
@@ -217,6 +273,13 @@ de usuário são mantidas somente durante o bind, apagadas dos arrays mutáveis 
 
 Os testes de integração sobem PostgreSQL 18 e Redis 8 com Testcontainers e são ignorados automaticamente
 quando um runtime de containers não estiver disponível. O artefato padronizado é `target/app.jar`.
+
+`SecurityAdministrationIntegrationTest` executa HTTP real com PostgreSQL e Redis. Configure
+`IAM_INTEGRATION_DB_URL`, `IAM_INTEGRATION_DB_USERNAME`, `IAM_INTEGRATION_DB_PASSWORD` e
+`IAM_INTEGRATION_REDIS_PORT` (padrão `56379`) antes de `./mvnw test`.
+Use um banco vazio e descartável: o teste aplica migrations e cria seus próprios usuários.
+Ele valida CSRF, login local, grupos, atualização de permissões, bloqueios, revogação,
+troca de senha, último administrador, auditoria e referências de segredos redigidas.
 
 ## SonarQube
 
